@@ -74,7 +74,6 @@ export const usePlaylistStore = defineStore('playlists', () => {
       const cached = await loadPlaylistTracks(playlistId);
       if (cached && cached.length > 0) {
         currentTracks.value = cached;
-        isLoadingTracks.value = false;
         return;
       }
 

@@ -4,6 +4,44 @@ import type { SpotifyPlaylist, SpotifyTrack, SpotifyPaginatedResponse } from '@/
 const API_BASE = 'https://api.spotify.com/v1';
 
 // ---------------------------------------------------------------------------
+// Raw Spotify API response shapes (partial, only fields we use)
+// ---------------------------------------------------------------------------
+
+interface RawImage {
+  url: string;
+}
+
+interface RawArtist {
+  name: string;
+}
+
+interface RawAlbum {
+  name?: string;
+  images?: RawImage[];
+}
+
+interface RawTrack {
+  id: string | null;
+  name?: string;
+  preview_url?: string | null;
+  artists?: RawArtist[];
+  album?: RawAlbum;
+}
+
+interface RawPlaylistItem {
+  track: RawTrack | null;
+}
+
+interface RawPlaylist {
+  id: string;
+  name?: string;
+  description?: string;
+  images?: RawImage[];
+  tracks?: { total: number };
+  owner?: { display_name?: string };
+}
+
+// ---------------------------------------------------------------------------
 // Authenticated fetch wrapper
 // ---------------------------------------------------------------------------
 
@@ -48,10 +86,10 @@ export async function fetchUserPlaylists(): Promise<SpotifyPlaylist[]> {
   const playlists: SpotifyPlaylist[] = [];
   let offset = 0;
   const limit = 50;
+  let hasMore = true;
 
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const data = await apiFetch<SpotifyPaginatedResponse<Record<string, unknown>>>(
+  while (hasMore) {
+    const data = await apiFetch<SpotifyPaginatedResponse<RawPlaylist>>(
       `/me/playlists?limit=${limit}&offset=${offset}`,
     );
 
@@ -59,7 +97,7 @@ export async function fetchUserPlaylists(): Promise<SpotifyPlaylist[]> {
       playlists.push(mapPlaylist(item));
     }
 
-    if (!data.next) break;
+    hasMore = data.next !== null;
     offset += limit;
   }
 
@@ -75,10 +113,10 @@ export async function fetchPlaylistTracks(playlistId: string): Promise<SpotifyTr
   const tracks: SpotifyTrack[] = [];
   let offset = 0;
   const limit = 100;
+  let hasMore = true;
 
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const data = await apiFetch<SpotifyPaginatedResponse<Record<string, unknown>>>(
+  while (hasMore) {
+    const data = await apiFetch<SpotifyPaginatedResponse<RawPlaylistItem>>(
       `/playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}&fields=items(track(id,name,preview_url,artists(name),album(name,images))),total,limit,offset,next`,
     );
 
@@ -87,7 +125,7 @@ export async function fetchPlaylistTracks(playlistId: string): Promise<SpotifyTr
       if (track) tracks.push(track);
     }
 
-    if (!data.next) break;
+    hasMore = data.next !== null;
     offset += limit;
   }
 
@@ -98,9 +136,8 @@ export async function fetchPlaylistTracks(playlistId: string): Promise<SpotifyTr
 // Mappers – raw API objects → clean local types
 // ---------------------------------------------------------------------------
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function mapPlaylist(raw: any): SpotifyPlaylist {
-  const images: any[] = raw.images ?? [];
+function mapPlaylist(raw: RawPlaylist): SpotifyPlaylist {
+  const images = raw.images ?? [];
   return {
     id: raw.id,
     name: raw.name ?? 'Unbenannte Playlist',
@@ -111,21 +148,20 @@ function mapPlaylist(raw: any): SpotifyPlaylist {
   };
 }
 
-function mapTrack(raw: any, playlistId: string): SpotifyTrack | null {
+function mapTrack(raw: RawPlaylistItem, playlistId: string): SpotifyTrack | null {
   const track = raw.track;
   if (!track || !track.id) return null; // skip local-only / unavailable tracks
 
-  const artists: any[] = track.artists ?? [];
-  const images: any[] = track.album?.images ?? [];
+  const artists = track.artists ?? [];
+  const images = track.album?.images ?? [];
 
   return {
     id: track.id,
     name: track.name ?? 'Unbekannter Titel',
-    artist: artists.map((a: any) => a.name).join(', ') || 'Unbekannter Künstler',
+    artist: artists.map((a) => a.name).join(', ') || 'Unbekannter Künstler',
     albumName: track.album?.name ?? '',
     albumCoverUrl: images.length > 0 ? images[0].url : null,
     previewUrl: track.preview_url ?? null,
     playlistId,
   };
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
