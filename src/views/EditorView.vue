@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed, reactive, watch } from 'vue';
+import { onMounted, computed, reactive, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 import { usePlaylistStore } from '@/stores/playlists';
 import type { SpotifyTrack } from '@/types/spotify';
@@ -48,16 +48,23 @@ const tierData = reactive<Record<TierKey | 'unranked', SpotifyTrack[]>>({
   unranked: [],
 });
 
-// When tracks are loaded from the store, populate the unranked pool
-// (only if tierData is still empty, to avoid overwriting user edits)
+// Track whether initial population from the store has already occurred
+const initialPopulationDone = ref(false);
+
+// When tracks are loaded from the store, populate the unranked pool once
 watch(
   () => store.currentTracks,
   (tracks) => {
-    const totalAssigned = tiers.reduce((sum, t) => sum + tierData[t].length, 0) + tierData.unranked.length;
-    if (totalAssigned === 0 && tracks.length > 0) {
+    if (!initialPopulationDone.value && tracks.length > 0) {
       tierData.unranked = [...tracks];
+      initialPopulationDone.value = true;
     }
   },
+);
+
+// True when no tracks exist anywhere (empty state)
+const hasNoTracks = computed(() =>
+  tierData.unranked.length === 0 && tiers.every((t) => tierData[t].length === 0),
 );
 
 // Shared sortable group so items can move between all lists
@@ -150,7 +157,7 @@ onMounted(() => {
           </h2>
 
           <div
-            v-if="tierData.unranked.length === 0 && tiers.every((t) => tierData[t].length === 0)"
+            v-if="hasNoTracks"
             class="py-4 text-center text-sm text-zinc-500"
           >
             Keine Tracks gefunden.
