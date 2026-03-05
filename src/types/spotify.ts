@@ -19,6 +19,16 @@ export interface SpotifyTrack {
   playlistId: string;
 }
 
+/** Ranking data – maps tier keys to arrays of track IDs. */
+export interface RankingData {
+  S: string[];
+  A: string[];
+  B: string[];
+  C: string[];
+  D: string[];
+  unranked: string[];
+}
+
 /** Raw Spotify API paginated response. */
 export interface SpotifyPaginatedResponse<T> {
   items: T[];

@@ -1,8 +1,8 @@
 import localforage from 'localforage';
-import type { SpotifyPlaylist, SpotifyTrack } from '@/types/spotify';
+import type { SpotifyPlaylist, SpotifyTrack, RankingData } from '@/types/spotify';
 
 // ---------------------------------------------------------------------------
-// Separate stores for playlists & tracks
+// Separate stores for playlists, tracks & rankings
 // ---------------------------------------------------------------------------
 
 const playlistStore = localforage.createInstance({
@@ -15,6 +15,12 @@ const trackStore = localforage.createInstance({
   name: 'spotranker',
   storeName: 'tracks',
   description: 'Cached playlist tracks',
+});
+
+const rankingStore = localforage.createInstance({
+  name: 'spotranker',
+  storeName: 'rankings',
+  description: 'Persisted tier-list rankings per playlist',
 });
 
 // ---------------------------------------------------------------------------
@@ -57,4 +63,18 @@ export async function getCachedPlaylistIds(): Promise<Set<string>> {
   const prefix = 'tracks_';
   const ids = keys.filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length));
   return new Set(ids);
+}
+
+// ---------------------------------------------------------------------------
+// Ranking helpers (keyed by playlistId)
+// ---------------------------------------------------------------------------
+
+/** Persist ranking (tier → track-ID mapping) for one playlist. */
+export async function saveRanking(playlistId: string, ranking: RankingData): Promise<void> {
+  await rankingStore.setItem(`ranking_${playlistId}`, ranking);
+}
+
+/** Load a saved ranking for a playlist (returns null if none exists). */
+export async function loadRanking(playlistId: string): Promise<RankingData | null> {
+  return await rankingStore.getItem<RankingData>(`ranking_${playlistId}`);
 }

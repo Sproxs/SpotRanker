@@ -3,6 +3,8 @@ import { onMounted, computed, reactive, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 import { usePlaylistStore } from '@/stores/playlists';
 import type { SpotifyTrack } from '@/types/spotify';
+import type { RankingData } from '@/types/spotify';
+import { saveRanking, loadRanking } from '@/services/offlineDb';
 import BaseSpinner from '@/components/ui/BaseSpinner.vue';
 
 const props = defineProps<{ playlistId: string }>();
@@ -51,12 +53,76 @@ const tierData = reactive<Record<TierKey | 'unranked', SpotifyTrack[]>>({
 // Track whether initial population from the store has already occurred
 const initialPopulationDone = ref(false);
 
-// When tracks are loaded from the store, populate the unranked pool once
+// ---------------------------------------------------------------------------
+// Hydration helper – restore ranking from IndexedDB into tierData
+// ---------------------------------------------------------------------------
+function hydrateFromRanking(tracks: SpotifyTrack[], ranking: RankingData): void {
+  const trackMap = new Map<string, SpotifyTrack>();
+  for (const t of tracks) {
+    trackMap.set(t.id, t);
+  }
+
+  const allTierKeys: (TierKey | 'unranked')[] = [...tiers, 'unranked'];
+
+  for (const key of allTierKeys) {
+    const ids: string[] = ranking[key] ?? [];
+    tierData[key] = ids
+      .map((id) => trackMap.get(id))
+      .filter((t): t is SpotifyTrack => t !== undefined);
+  }
+
+  // Any tracks not referenced in the saved ranking go back to unranked
+  const assignedIds = new Set(allTierKeys.flatMap((k) => ranking[k] ?? []));
+  const leftover = tracks.filter((t) => !assignedIds.has(t.id));
+  if (leftover.length > 0) {
+    tierData.unranked.push(...leftover);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Debounced auto-save
+// ---------------------------------------------------------------------------
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function debouncedSave(): void {
+  if (saveTimer !== null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const ranking: RankingData = {
+      S: tierData.S.map((t) => t.id),
+      A: tierData.A.map((t) => t.id),
+      B: tierData.B.map((t) => t.id),
+      C: tierData.C.map((t) => t.id),
+      D: tierData.D.map((t) => t.id),
+      unranked: tierData.unranked.map((t) => t.id),
+    };
+    saveRanking(props.playlistId, ranking).catch((err) => {
+      console.error('[EditorView] Ranking konnte nicht gespeichert werden:', err);
+    });
+  }, 500);
+}
+
+// Watch tierData deeply and trigger debounced save after initial hydration
+watch(tierData, () => {
+  if (initialPopulationDone.value) {
+    debouncedSave();
+  }
+}, { deep: true });
+
+// When tracks are loaded from the store, populate tiers (with hydration)
 watch(
   () => store.currentTracks,
-  (tracks) => {
+  async (tracks) => {
     if (!initialPopulationDone.value && tracks.length > 0) {
-      tierData.unranked = [...tracks];
+      const savedRanking = await loadRanking(props.playlistId);
+      if (savedRanking) {
+        hydrateFromRanking(tracks, savedRanking);
+      } else {
+        tierData.unranked = [...tracks];
+      }
       initialPopulationDone.value = true;
     }
   },
