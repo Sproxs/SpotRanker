@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue';
+import { onMounted, computed, reactive, ref, watch } from 'vue';
+import draggable from 'vuedraggable';
 import { usePlaylistStore } from '@/stores/playlists';
+import type { SpotifyTrack } from '@/types/spotify';
 import BaseSpinner from '@/components/ui/BaseSpinner.vue';
 
 const props = defineProps<{ playlistId: string }>();
@@ -12,8 +14,13 @@ const playlistName = computed(() => {
   return p?.name ?? 'Playlist';
 });
 
-const tiers = ['S', 'A', 'B', 'C', 'D'];
-const tierColors: Record<string, string> = {
+// ---------------------------------------------------------------------------
+// Tier definitions & colors
+// ---------------------------------------------------------------------------
+const tiers = ['S', 'A', 'B', 'C', 'D'] as const;
+type TierKey = (typeof tiers)[number];
+
+const tierColors: Record<TierKey, string> = {
   S: 'bg-red-600',
   A: 'bg-orange-500',
   B: 'bg-yellow-500',
@@ -21,35 +28,59 @@ const tierColors: Record<string, string> = {
   D: 'bg-blue-500',
 };
 
+const tierBorderColors: Record<TierKey, string> = {
+  S: 'border-red-600/40',
+  A: 'border-orange-500/40',
+  B: 'border-yellow-500/40',
+  C: 'border-green-500/40',
+  D: 'border-blue-500/40',
+};
+
+// ---------------------------------------------------------------------------
+// Reactive tier data – songs for each tier + unranked pool
+// ---------------------------------------------------------------------------
+const tierData = reactive<Record<TierKey | 'unranked', SpotifyTrack[]>>({
+  S: [],
+  A: [],
+  B: [],
+  C: [],
+  D: [],
+  unranked: [],
+});
+
+// Track whether initial population from the store has already occurred
+const initialPopulationDone = ref(false);
+
+// When tracks are loaded from the store, populate the unranked pool once
+watch(
+  () => store.currentTracks,
+  (tracks) => {
+    if (!initialPopulationDone.value && tracks.length > 0) {
+      tierData.unranked = [...tracks];
+      initialPopulationDone.value = true;
+    }
+  },
+);
+
+// True when no tracks exist anywhere (empty state)
+const hasNoTracks = computed(() =>
+  tierData.unranked.length === 0 && tiers.every((t) => tierData[t].length === 0),
+);
+
+// Shared sortable group so items can move between all lists
+const dragGroup = { name: 'tierlist', pull: true, put: true };
+
 onMounted(() => {
   store.loadTracks(props.playlistId);
 });
 </script>
 
 <template>
-  <section class="space-y-4">
-    <header>
+  <section class="pb-72 sm:pb-64">
+    <header class="mb-4">
       <h1 class="text-3xl font-black text-white">Tier Editor</h1>
       <p class="mt-1 text-zinc-300">{{ playlistName }}</p>
     </header>
-
-    <!-- Tier rows (Phase 4 will add drag & drop) -->
-    <div class="space-y-2">
-      <div
-        v-for="tier in tiers"
-        :key="tier"
-        class="grid min-h-20 grid-cols-[4rem_1fr] items-stretch overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/70"
-      >
-        <div
-          :class="[tierColors[tier], 'flex items-center justify-center text-lg font-black text-white']"
-        >
-          {{ tier }}
-        </div>
-        <div class="flex items-center px-3 text-sm text-zinc-400">
-          Drop-Zone wird in Phase 4 mit Drag &amp; Drop aktiv.
-        </div>
-      </div>
-    </div>
 
     <!-- Loading tracks -->
     <div v-if="store.isLoadingTracks" class="flex items-center justify-center py-8">
@@ -64,44 +95,106 @@ onMounted(() => {
       {{ store.error }}
     </div>
 
-    <!-- Unranked pool -->
-    <div
-      v-else
-      class="rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-4"
-    >
-      <h2 class="mb-3 text-sm font-semibold text-zinc-300">
-        Unranked Pool ({{ store.currentTracks.length }} Songs)
-      </h2>
-
-      <div
-        v-if="store.currentTracks.length === 0"
-        class="py-6 text-center text-sm text-zinc-500"
-      >
-        Keine Tracks gefunden.
-      </div>
-
-      <div v-else class="flex flex-wrap gap-3">
+    <template v-else>
+      <!-- Tier rows -->
+      <div class="space-y-2">
         <div
-          v-for="track in store.currentTracks"
-          :key="track.id"
-          class="w-24 flex-shrink-0 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition hover:border-spotify-400/50"
+          v-for="tier in tiers"
+          :key="tier"
+          :class="[
+            tierBorderColors[tier],
+            'grid min-h-20 grid-cols-[4rem_1fr] items-stretch overflow-hidden rounded-xl border bg-zinc-900/70 transition-colors',
+          ]"
         >
-          <div class="aspect-square w-full bg-zinc-800">
-            <img
-              v-if="track.albumCoverUrl"
-              :src="track.albumCoverUrl"
-              :alt="track.name"
-              class="h-full w-full object-cover"
-              loading="lazy"
-            />
-            <div v-else class="flex h-full items-center justify-center text-2xl text-zinc-600">🎵</div>
+          <!-- Tier label -->
+          <div
+            :class="[tierColors[tier], 'flex items-center justify-center text-lg font-black text-white select-none']"
+          >
+            {{ tier }}
           </div>
-          <div class="p-1.5">
-            <p class="truncate text-[10px] font-semibold text-white">{{ track.name }}</p>
-            <p class="truncate text-[9px] text-zinc-400">{{ track.artist }}</p>
-          </div>
+
+          <!-- Draggable drop zone -->
+          <draggable
+            v-model="tierData[tier]"
+            :group="dragGroup"
+            item-key="id"
+            :animation="200"
+            ghost-class="opacity-40"
+            drag-class="rotate-2"
+            class="flex min-h-20 flex-wrap items-start gap-2 p-2"
+          >
+            <template #item="{ element }: { element: SpotifyTrack }">
+              <div
+                class="w-20 flex-shrink-0 cursor-grab overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 transition-transform active:cursor-grabbing active:scale-105"
+              >
+                <div class="aspect-square w-full bg-zinc-800">
+                  <img
+                    v-if="element.albumCoverUrl"
+                    :src="element.albumCoverUrl"
+                    :alt="element.name"
+                    class="pointer-events-none h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  <div v-else class="flex h-full items-center justify-center text-xl text-zinc-600">🎵</div>
+                </div>
+                <div class="p-1">
+                  <p class="truncate text-[10px] font-semibold text-white">{{ element.name }}</p>
+                  <p class="truncate text-[9px] text-zinc-400">{{ element.artist }}</p>
+                </div>
+              </div>
+            </template>
+          </draggable>
         </div>
       </div>
-    </div>
+
+      <!-- Sticky unranked pool (bottom) -->
+      <div
+        class="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-700 bg-zinc-950/95 backdrop-blur-md"
+      >
+        <div class="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+          <h2 class="mb-2 text-sm font-semibold text-zinc-300">
+            Unranked Pool ({{ tierData.unranked.length }})
+          </h2>
+
+          <div
+            v-if="hasNoTracks"
+            class="py-4 text-center text-sm text-zinc-500"
+          >
+            Keine Tracks gefunden.
+          </div>
+
+          <draggable
+            v-model="tierData.unranked"
+            :group="dragGroup"
+            item-key="id"
+            :animation="200"
+            ghost-class="opacity-40"
+            drag-class="rotate-2"
+            class="flex max-h-44 flex-wrap gap-2 overflow-y-auto sm:max-h-40"
+          >
+            <template #item="{ element }: { element: SpotifyTrack }">
+              <div
+                class="w-20 flex-shrink-0 cursor-grab overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition-transform hover:border-spotify-400/50 active:cursor-grabbing active:scale-105"
+              >
+                <div class="aspect-square w-full bg-zinc-800">
+                  <img
+                    v-if="element.albumCoverUrl"
+                    :src="element.albumCoverUrl"
+                    :alt="element.name"
+                    class="pointer-events-none h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  <div v-else class="flex h-full items-center justify-center text-xl text-zinc-600">🎵</div>
+                </div>
+                <div class="p-1">
+                  <p class="truncate text-[10px] font-semibold text-white">{{ element.name }}</p>
+                  <p class="truncate text-[9px] text-zinc-400">{{ element.artist }}</p>
+                </div>
+              </div>
+            </template>
+          </draggable>
+        </div>
+      </div>
+    </template>
   </section>
 </template>
