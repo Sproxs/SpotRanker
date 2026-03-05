@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SpotRanker icon">
+  <rect width="512" height="512" rx="96" fill="#121212"/>
+  <circle cx="256" cy="256" r="176" fill="#1db954"/>
+  <path d="M152 272c68-20 140-20 208 0" stroke="#121212" stroke-width="28" stroke-linecap="round" fill="none"/>
+  <path d="M168 340c58-16 118-16 176 0" stroke="#121212" stroke-width="22" stroke-linecap="round" fill="none"/>
+</svg>
