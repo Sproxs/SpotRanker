@@ -55,6 +55,21 @@ const tierData = reactive<Record<TierKey | 'unranked', SpotifyTrack[]>>({
 const initialPopulationDone = ref(false);
 
 // ---------------------------------------------------------------------------
+// User-facing status message (toast-style feedback)
+// ---------------------------------------------------------------------------
+const statusMessage = ref('');
+let statusTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showStatus(msg: string, durationMs = 3000): void {
+  statusMessage.value = msg;
+  if (statusTimer !== null) clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => {
+    statusMessage.value = '';
+    statusTimer = null;
+  }, durationMs);
+}
+
+// ---------------------------------------------------------------------------
 // Hydration helper – restore ranking from IndexedDB into tierData
 // ---------------------------------------------------------------------------
 function hydrateFromRanking(tracks: SpotifyTrack[], ranking: RankingData): void {
@@ -81,9 +96,36 @@ function hydrateFromRanking(tracks: SpotifyTrack[], ranking: RankingData): void 
 }
 
 // ---------------------------------------------------------------------------
-// Debounced auto-save
+// Debounced auto-save with serialization guard
 // ---------------------------------------------------------------------------
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let isSaving = false;
+let pendingSave: RankingData | null = null;
+
+async function executeSave(ranking: RankingData): Promise<void> {
+  if (isSaving) {
+    // Queue the latest state – only the most recent matters
+    pendingSave = ranking;
+    return;
+  }
+
+  isSaving = true;
+  try {
+    await saveRanking(props.playlistId, ranking);
+  } catch (err) {
+    console.error('[EditorView] Ranking konnte nicht gespeichert werden:', err);
+    showStatus('Speichern fehlgeschlagen – bitte erneut versuchen.');
+  } finally {
+    isSaving = false;
+  }
+
+  // If a newer save was queued while we were writing, flush it now
+  if (pendingSave) {
+    const next = pendingSave;
+    pendingSave = null;
+    await executeSave(next);
+  }
+}
 
 function debouncedSave(): void {
   if (saveTimer !== null) {
@@ -100,9 +142,7 @@ function debouncedSave(): void {
       D: tierData.D.map((t) => t.id),
       unranked: tierData.unranked.map((t) => t.id),
     };
-    saveRanking(props.playlistId, ranking).catch((err) => {
-      console.error('[EditorView] Ranking konnte nicht gespeichert werden:', err);
-    });
+    executeSave(ranking);
   }, 500);
 }
 
@@ -117,12 +157,26 @@ watch(tierData, () => {
 watch(
   () => store.currentTracks,
   async (tracks) => {
-    if (!initialPopulationDone.value && tracks.length > 0) {
-      const savedRanking = await loadRanking(props.playlistId);
-      if (savedRanking) {
-        hydrateFromRanking(tracks, savedRanking);
-      } else {
+    if (initialPopulationDone.value) return;
+
+    // Handle empty playlists: mark done immediately so the UI is consistent
+    if (tracks.length === 0 && !store.isLoadingTracks) {
+      initialPopulationDone.value = true;
+      return;
+    }
+
+    if (tracks.length > 0) {
+      try {
+        const savedRanking = await loadRanking(props.playlistId);
+        if (savedRanking) {
+          hydrateFromRanking(tracks, savedRanking);
+        } else {
+          tierData.unranked = [...tracks];
+        }
+      } catch (err) {
+        console.error('[EditorView] Ranking-Hydration fehlgeschlagen:', err);
         tierData.unranked = [...tracks];
+        showStatus('Gespeichertes Ranking konnte nicht geladen werden.');
       }
       initialPopulationDone.value = true;
     }
@@ -162,6 +216,7 @@ async function exportAsImage(): Promise<void> {
     link.click();
   } catch (err) {
     console.error('[EditorView] Image export failed:', err);
+    showStatus('Bild-Export fehlgeschlagen.');
   } finally {
     isExporting.value = false;
   }
@@ -202,6 +257,7 @@ async function shareImage(): Promise<void> {
   } catch (err) {
     if ((err as DOMException).name !== 'AbortError') {
       console.error('[EditorView] Share failed:', err);
+      showStatus('Teilen fehlgeschlagen.');
     }
   } finally {
     isSharing.value = false;
@@ -211,10 +267,11 @@ async function shareImage(): Promise<void> {
 const shareTooltip = ref('');
 
 // ---------------------------------------------------------------------------
-// Audio Preview
+// Audio Preview (with proper cleanup to prevent memory leaks)
 // ---------------------------------------------------------------------------
 const currentAudio = ref<HTMLAudioElement | null>(null);
 const currentPreviewId = ref<string | null>(null);
+let audioEndedHandler: (() => void) | null = null;
 
 function togglePreview(track: SpotifyTrack): void {
   if (!track.previewUrl) return;
@@ -230,12 +287,17 @@ function togglePreview(track: SpotifyTrack): void {
 
   const audio = new Audio(track.previewUrl);
   audio.volume = 0.5;
-  audio.addEventListener('ended', () => {
+
+  audioEndedHandler = () => {
     currentPreviewId.value = null;
     currentAudio.value = null;
-  });
+    audioEndedHandler = null;
+  };
+  audio.addEventListener('ended', audioEndedHandler);
+
   audio.play().catch((err) => {
     console.error('[EditorView] Audio preview failed:', err);
+    stopPreview();
   });
 
   currentAudio.value = audio;
@@ -244,6 +306,10 @@ function togglePreview(track: SpotifyTrack): void {
 
 function stopPreview(): void {
   if (currentAudio.value) {
+    if (audioEndedHandler) {
+      currentAudio.value.removeEventListener('ended', audioEndedHandler);
+      audioEndedHandler = null;
+    }
     currentAudio.value.pause();
     currentAudio.value.removeAttribute('src');
     currentAudio.value.load();
@@ -253,6 +319,15 @@ function stopPreview(): void {
 }
 
 onBeforeUnmount(() => {
+  // Clean up pending save timer to prevent writes after unmount
+  if (saveTimer !== null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (statusTimer !== null) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
+  }
   stopPreview();
 });
 
@@ -298,6 +373,16 @@ onMounted(() => {
         </div>
       </div>
     </header>
+
+    <!-- Status toast -->
+    <Transition name="fade">
+      <div
+        v-if="statusMessage"
+        class="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-lg border border-zinc-600 bg-zinc-800 px-4 py-2 text-sm text-zinc-200 shadow-lg"
+      >
+        {{ statusMessage }}
+      </div>
+    </Transition>
 
     <!-- Loading skeleton -->
     <div v-if="store.isLoadingTracks" class="space-y-2">
@@ -349,6 +434,7 @@ onMounted(() => {
                     v-if="element.albumCoverUrl"
                     :src="element.albumCoverUrl"
                     :alt="element.name"
+                    crossorigin="anonymous"
                     class="pointer-events-none h-full w-full object-cover"
                     loading="lazy"
                   />
@@ -405,12 +491,14 @@ onMounted(() => {
             <template #item="{ element }: { element: SpotifyTrack }">
               <div
                 class="group/tile relative w-20 flex-shrink-0 cursor-grab overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition-transform hover:border-spotify-400/50 active:cursor-grabbing active:scale-105"
+                style="content-visibility: auto; contain-intrinsic-size: 5rem 6.5rem"
               >
                 <div class="relative aspect-square w-full bg-zinc-800">
                   <img
                     v-if="element.albumCoverUrl"
                     :src="element.albumCoverUrl"
                     :alt="element.name"
+                    crossorigin="anonymous"
                     class="pointer-events-none h-full w-full object-cover"
                     loading="lazy"
                   />
@@ -439,3 +527,14 @@ onMounted(() => {
     </template>
   </section>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>
