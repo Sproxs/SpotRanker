@@ -118,3 +118,12 @@ export async function loadRanking(playlistId: string): Promise<RankingData | nul
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Cache management
+// ---------------------------------------------------------------------------
+
+/** Clear all cached data (playlists, tracks and rankings). */
+export async function clearAllCaches(): Promise<void> {
+  await Promise.all([playlistStore.clear(), trackStore.clear(), rankingStore.clear()]);
+}
