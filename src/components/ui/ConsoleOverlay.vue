@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
+import { clearAllCaches } from '@/services/offlineDb';
 
 type LogLevel = 'log' | 'warn' | 'error';
 
@@ -12,7 +13,9 @@ interface LogEntry {
 
 const visible = ref(false);
 const logs = ref<LogEntry[]>([]);
+const cacheCleared = ref(false);
 let nextId = 0;
+let cacheClearTimer: ReturnType<typeof setTimeout> | null = null;
 
 const MAX_ENTRIES = 100;
 
@@ -95,6 +98,7 @@ onUnmounted(() => {
   uninstall();
   window.removeEventListener('error', onUnhandledError);
   window.removeEventListener('unhandledrejection', onUnhandledRejection);
+  if (cacheClearTimer !== null) clearTimeout(cacheClearTimer);
 });
 
 const levelClass: Record<LogLevel, string> = {
@@ -108,6 +112,21 @@ const levelBadge: Record<LogLevel, string> = {
   warn: 'bg-yellow-900/60 text-yellow-300',
   error: 'bg-red-900/60 text-red-300',
 };
+
+async function handleClearCache() {
+  try {
+    await clearAllCaches();
+    console.log('[ConsoleOverlay] All caches cleared.');
+    cacheCleared.value = true;
+    if (cacheClearTimer !== null) clearTimeout(cacheClearTimer);
+    cacheClearTimer = setTimeout(() => {
+      cacheCleared.value = false;
+      cacheClearTimer = null;
+    }, 2000);
+  } catch (err) {
+    console.error('[ConsoleOverlay] Failed to clear caches:', err);
+  }
+}
 </script>
 
 <template>
@@ -130,12 +149,21 @@ const levelBadge: Record<LogLevel, string> = {
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-2">
         <span class="text-xs font-semibold uppercase tracking-widest text-zinc-400">Console</span>
-        <button
-          class="rounded px-2 py-0.5 text-xs text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"
-          @click="logs = []"
-        >
-          Clear
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="rounded px-2 py-0.5 text-xs transition"
+            :class="cacheCleared ? 'bg-green-900/60 text-green-300' : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200'"
+            @click="handleClearCache"
+          >
+            {{ cacheCleared ? 'Cleared!' : 'Clear Cache' }}
+          </button>
+          <button
+            class="rounded px-2 py-0.5 text-xs text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"
+            @click="logs = []"
+          >
+            Clear
+          </button>
+        </div>
       </div>
 
       <!-- Log entries -->
