@@ -110,21 +110,21 @@ async function executeSave(ranking: RankingData): Promise<void> {
   }
 
   isSaving = true;
-  try {
-    await saveRanking(props.playlistId, ranking);
-  } catch (err) {
-    console.error('[EditorView] Ranking konnte nicht gespeichert werden:', err);
-    showStatus('Speichern fehlgeschlagen – bitte erneut versuchen.');
-  } finally {
-    isSaving = false;
+  let current: RankingData | null = ranking;
+
+  while (current) {
+    try {
+      await saveRanking(props.playlistId, current);
+    } catch (err) {
+      console.error('[EditorView] Ranking konnte nicht gespeichert werden:', err);
+      showStatus('Speichern fehlgeschlagen – bitte erneut versuchen.');
+    }
+    // If a newer save was queued while we were writing, flush it now
+    current = pendingSave;
+    pendingSave = null;
   }
 
-  // If a newer save was queued while we were writing, flush it now
-  if (pendingSave) {
-    const next = pendingSave;
-    pendingSave = null;
-    await executeSave(next);
-  }
+  isSaving = false;
 }
 
 function debouncedSave(): void {
@@ -142,7 +142,8 @@ function debouncedSave(): void {
       D: tierData.D.map((t) => t.id),
       unranked: tierData.unranked.map((t) => t.id),
     };
-    executeSave(ranking);
+    // Fire-and-forget: executeSave handles errors internally
+    void executeSave(ranking);
   }, 500);
 }
 

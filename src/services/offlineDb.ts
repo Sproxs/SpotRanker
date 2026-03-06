@@ -33,7 +33,7 @@ export async function savePlaylists(playlists: SpotifyPlaylist[]): Promise<void>
     await playlistStore.setItem('userPlaylists', playlists);
   } catch (err) {
     console.error('[offlineDb] Playlists konnten nicht gespeichert werden:', err);
-    throw new Error('Playlists konnten nicht im lokalen Speicher gespeichert werden.');
+    throw new Error(`Playlists konnten nicht im lokalen Speicher gespeichert werden: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -57,7 +57,7 @@ export async function savePlaylistTracks(playlistId: string, tracks: SpotifyTrac
     await trackStore.setItem(`tracks_${playlistId}`, tracks);
   } catch (err) {
     console.error('[offlineDb] Tracks konnten nicht gespeichert werden:', err);
-    throw new Error('Tracks konnten nicht im lokalen Speicher gespeichert werden.');
+    throw new Error(`Tracks konnten nicht im lokalen Speicher gespeichert werden: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -105,7 +105,7 @@ export async function saveRanking(playlistId: string, ranking: RankingData): Pro
     await rankingStore.setItem(`ranking_${playlistId}`, ranking);
   } catch (err) {
     console.error('[offlineDb] Ranking konnte nicht gespeichert werden:', err);
-    throw new Error('Ranking konnte nicht im lokalen Speicher gespeichert werden.');
+    throw new Error(`Ranking konnte nicht im lokalen Speicher gespeichert werden: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

@@ -197,6 +197,7 @@ export const useAuthStore = defineStore('auth', () => {
           // fetch throws TypeError on network failure
           return false;
         }
+        console.error('[auth] Token refresh failed:', e);
         clearTokens();
         return false;
       } finally {
