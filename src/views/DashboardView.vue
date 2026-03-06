@@ -74,6 +74,7 @@ function openEditor(playlistId: string) {
             v-if="playlist.imageUrl"
             :src="playlist.imageUrl"
             :alt="playlist.name"
+            crossorigin="anonymous"
             class="h-full w-full object-cover"
             loading="lazy"
           />

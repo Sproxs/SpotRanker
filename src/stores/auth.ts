@@ -190,7 +190,14 @@ export const useAuthStore = defineStore('auth', () => {
         const data = await response.json();
         persistTokens(data.access_token, data.refresh_token ?? refreshToken.value, data.expires_in);
         return true;
-      } catch {
+      } catch (e) {
+        // Network error (likely offline) – keep existing tokens so cached
+        // data stays accessible. Only clear on explicit server rejection.
+        if (e instanceof TypeError) {
+          // fetch throws TypeError on network failure
+          return false;
+        }
+        console.error('[auth] Token refresh failed:', e);
         clearTokens();
         return false;
       } finally {
