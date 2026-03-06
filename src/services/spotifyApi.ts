@@ -70,6 +70,26 @@ async function apiFetch<T>(endpoint: string): Promise<T> {
     return retry.json() as Promise<T>;
   }
 
+  if (response.status === 403) {
+    // 403 Forbidden – parse the response body for the specific reason.
+    const errorData = await response.json().catch(() => ({})) as { error?: { message?: string } };
+    const reason = errorData?.error?.message ?? '';
+
+    if (reason === 'Insufficient client scope') {
+      // The cached token was obtained without the required OAuth scopes
+      // (e.g. playlist-read-private was added after the user last logged in).
+      // Clearing tokens forces a full re-authentication with the current scope list.
+      auth.logout();
+      throw new Error('Unzureichende Berechtigungen. Bitte erneut einloggen, um Zugriff auf deine Playlists zu erhalten.');
+    }
+
+    throw new Error(
+      reason
+        ? `Spotify-Fehler: ${reason}`
+        : 'Zugriff verweigert (403). Falls dieses Problem bestehen bleibt, bitte erneut einloggen.',
+    );
+  }
+
   if (!response.ok) {
     throw new Error(`Spotify API Fehler: ${response.status}`);
   }

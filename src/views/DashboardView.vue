@@ -1,11 +1,23 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlists';
+import { useAuthStore } from '@/stores/auth';
 import SkeletonCard from '@/components/ui/SkeletonCard.vue';
 
 const router = useRouter();
 const store = usePlaylistStore();
+const auth = useAuthStore();
+
+// If the user was force-logged out (e.g. 403 scope error), redirect to home.
+watch(
+  () => auth.isAuthenticated,
+  (isAuth) => {
+    if (!isAuth) {
+      router.replace({ name: 'home' });
+    }
+  },
+);
 
 onMounted(() => {
   store.loadUserPlaylists();
@@ -44,7 +56,13 @@ function openEditor(playlistId: string) {
       v-else-if="store.error"
       class="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400"
     >
-      {{ store.error }}
+      <p>{{ store.error }}</p>
+      <button
+        class="mt-3 rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200"
+        @click="auth.logout(); router.replace({ name: 'home' })"
+      >
+        Erneut einloggen
+      </button>
     </div>
 
     <!-- Empty state -->
