@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { SpotifyPlaylist, SpotifyTrack } from '@/types/spotify';
 import { fetchUserPlaylists, fetchPlaylistTracks } from '@/services/spotifyApi';
+import { useAuthStore } from '@/stores/auth';
 import {
   savePlaylists,
   loadPlaylists,
@@ -50,6 +51,15 @@ export const usePlaylistStore = defineStore('playlists', () => {
     } catch (e) {
       // Offline or token error – fall back to cache
       console.warn('[PlaylistStore] API-Abruf fehlgeschlagen, lade aus Cache…', e);
+
+      // If the API call caused a forced logout (e.g. 403 scope error), do not
+      // silently show stale cache – surface the re-login error immediately.
+      const auth = useAuthStore();
+      if (!auth.isAuthenticated) {
+        error.value = e instanceof Error ? e.message : 'Playlists konnten nicht geladen werden.';
+        return;
+      }
+
       const cached = await loadPlaylists();
       if (cached.length > 0) {
         playlists.value = cached;

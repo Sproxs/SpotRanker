@@ -1,6 +1,6 @@
 export const SPOTIFY_CONFIG = {
   clientId: import.meta.env.VITE_SPOTIFY_CLIENT_ID as string ?? '',
-  redirectUri: import.meta.env.VITE_SPOTIFY_REDIRECT_URI as string ?? `${window.location.origin}/callback`,
+  redirectUri: import.meta.env.VITE_SPOTIFY_REDIRECT_URI as string ?? `${window.location.origin}${import.meta.env.BASE_URL}callback`,
   scopes: [
     'playlist-read-private',
     'playlist-read-collaborative',

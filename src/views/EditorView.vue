@@ -2,7 +2,9 @@
 import { onMounted, onBeforeUnmount, computed, reactive, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 import html2canvas from 'html2canvas';
+import { useRouter } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlists';
+import { useAuthStore } from '@/stores/auth';
 import type { SpotifyTrack } from '@/types/spotify';
 import type { RankingData } from '@/types/spotify';
 import { saveRanking, loadRanking } from '@/services/offlineDb';
@@ -10,7 +12,19 @@ import SkeletonTierRow from '@/components/ui/SkeletonTierRow.vue';
 
 const props = defineProps<{ playlistId: string }>();
 
+const router = useRouter();
 const store = usePlaylistStore();
+const auth = useAuthStore();
+
+// If the user was force-logged out (e.g. 403 scope error), redirect to home.
+watch(
+  () => auth.isAuthenticated,
+  (isAuth) => {
+    if (!isAuth) {
+      router.replace({ name: 'home' });
+    }
+  },
+);
 
 const playlistName = computed(() => {
   const p = store.playlists.find((pl) => pl.id === props.playlistId);
@@ -395,7 +409,13 @@ onMounted(() => {
       v-else-if="store.error"
       class="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400"
     >
-      {{ store.error }}
+      <p>{{ store.error }}</p>
+      <button
+        class="mt-3 rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200"
+        @click="auth.logout(); router.replace({ name: 'home' })"
+      >
+        Erneut einloggen
+      </button>
     </div>
 
     <template v-else>
