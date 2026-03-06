@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>SpotRanker</title>
+    <script>
+      // SPA redirect for GitHub Pages (project site hosted at /<repo-name>/)
+      // Stores the original URL and redirects to the project root (first path segment).
+      // index.html will restore the URL via history.replaceState.
+      sessionStorage.setItem('redirect', location.href);
+      location.replace(location.pathname.split('/').slice(0, 2).join('/') + '/');
+    </script>
+  </head>
+  <body></body>
+</html>
