@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router';
 import AppNavbar from '@/components/ui/AppNavbar.vue';
+import ConsoleOverlay from '@/components/ui/ConsoleOverlay.vue';
 </script>
 
 <template>
@@ -13,5 +14,6 @@ import AppNavbar from '@/components/ui/AppNavbar.vue';
         <RouterView />
       </main>
     </div>
+    <ConsoleOverlay />
   </div>
 </template>
