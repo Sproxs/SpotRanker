@@ -2,7 +2,7 @@
 import { onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlists';
-import BaseSpinner from '@/components/ui/BaseSpinner.vue';
+import SkeletonCard from '@/components/ui/SkeletonCard.vue';
 
 const router = useRouter();
 const store = usePlaylistStore();
@@ -34,9 +34,9 @@ function openEditor(playlistId: string) {
       />
     </div>
 
-    <!-- Loading -->
-    <div v-if="store.isLoadingPlaylists" class="flex items-center justify-center py-12">
-      <BaseSpinner />
+    <!-- Loading skeleton -->
+    <div v-if="store.isLoadingPlaylists" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <SkeletonCard v-for="n in 6" :key="n" />
     </div>
 
     <!-- Error -->

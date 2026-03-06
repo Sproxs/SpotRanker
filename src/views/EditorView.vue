@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, computed, reactive, ref, watch } from 'vue';
+import { onMounted, onBeforeUnmount, computed, reactive, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
+import html2canvas from 'html2canvas';
 import { usePlaylistStore } from '@/stores/playlists';
 import type { SpotifyTrack } from '@/types/spotify';
 import type { RankingData } from '@/types/spotify';
 import { saveRanking, loadRanking } from '@/services/offlineDb';
-import BaseSpinner from '@/components/ui/BaseSpinner.vue';
+import SkeletonTierRow from '@/components/ui/SkeletonTierRow.vue';
 
 const props = defineProps<{ playlistId: string }>();
 
@@ -136,6 +137,125 @@ const hasNoTracks = computed(() =>
 // Shared sortable group so items can move between all lists
 const dragGroup = { name: 'tierlist', pull: true, put: true };
 
+// ---------------------------------------------------------------------------
+// Image Export & Sharing – shared config
+// ---------------------------------------------------------------------------
+const tierListRef = ref<HTMLElement | null>(null);
+const isExporting = ref(false);
+
+const canvasOptions = {
+  backgroundColor: '#09090b',
+  useCORS: true,
+  scale: 2,
+} as const;
+
+async function exportAsImage(): Promise<void> {
+  if (!tierListRef.value || isExporting.value) return;
+  isExporting.value = true;
+
+  try {
+    const canvas = await html2canvas(tierListRef.value, canvasOptions);
+    const dataUrl = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.download = `${playlistName.value}-tierlist.png`;
+    link.href = dataUrl;
+    link.click();
+  } catch (err) {
+    console.error('[EditorView] Image export failed:', err);
+  } finally {
+    isExporting.value = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sharing (Web Share API with clipboard fallback)
+// ---------------------------------------------------------------------------
+const isSharing = ref(false);
+
+async function shareImage(): Promise<void> {
+  if (!tierListRef.value || isSharing.value) return;
+  isSharing.value = true;
+
+  try {
+    const canvas = await html2canvas(tierListRef.value, canvasOptions);
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/png'),
+    );
+    if (!blob) throw new Error('Failed to create image blob');
+
+    if (navigator.share) {
+      const file = new File([blob], `${playlistName.value}-tierlist.png`, {
+        type: 'image/png',
+      });
+      await navigator.share({
+        title: `${playlistName.value} – SpotRanker Tier List`,
+        files: [file],
+      });
+    } else if (navigator.clipboard) {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': blob }),
+      ]);
+      shareTooltip.value = 'Copied to clipboard!';
+      setTimeout(() => (shareTooltip.value = ''), 2000);
+    }
+  } catch (err) {
+    if ((err as DOMException).name !== 'AbortError') {
+      console.error('[EditorView] Share failed:', err);
+    }
+  } finally {
+    isSharing.value = false;
+  }
+}
+
+const shareTooltip = ref('');
+
+// ---------------------------------------------------------------------------
+// Audio Preview
+// ---------------------------------------------------------------------------
+const currentAudio = ref<HTMLAudioElement | null>(null);
+const currentPreviewId = ref<string | null>(null);
+
+function togglePreview(track: SpotifyTrack): void {
+  if (!track.previewUrl) return;
+
+  // If clicking the same track that's already playing, stop it
+  if (currentPreviewId.value === track.id) {
+    stopPreview();
+    return;
+  }
+
+  // Stop any existing preview
+  stopPreview();
+
+  const audio = new Audio(track.previewUrl);
+  audio.volume = 0.5;
+  audio.addEventListener('ended', () => {
+    currentPreviewId.value = null;
+    currentAudio.value = null;
+  });
+  audio.play().catch((err) => {
+    console.error('[EditorView] Audio preview failed:', err);
+  });
+
+  currentAudio.value = audio;
+  currentPreviewId.value = track.id;
+}
+
+function stopPreview(): void {
+  if (currentAudio.value) {
+    currentAudio.value.pause();
+    currentAudio.value.removeAttribute('src');
+    currentAudio.value.load();
+    currentAudio.value = null;
+  }
+  currentPreviewId.value = null;
+}
+
+onBeforeUnmount(() => {
+  stopPreview();
+});
+
 onMounted(() => {
   store.loadTracks(props.playlistId);
 });
@@ -143,14 +263,45 @@ onMounted(() => {
 
 <template>
   <section class="pb-72 sm:pb-64">
-    <header class="mb-4">
-      <h1 class="text-3xl font-black text-white">Tier Editor</h1>
-      <p class="mt-1 text-zinc-300">{{ playlistName }}</p>
+    <header class="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="text-3xl font-black text-white">Tier Editor</h1>
+        <p class="mt-1 text-zinc-300">{{ playlistName }}</p>
+      </div>
+
+      <!-- Action buttons -->
+      <div v-if="!store.isLoadingTracks && !store.error" class="flex flex-wrap gap-2">
+        <button
+          :disabled="isExporting"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-zinc-500 hover:text-white disabled:opacity-50"
+          @click="exportAsImage"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          {{ isExporting ? 'Exporting…' : 'Save as Image' }}
+        </button>
+
+        <div class="relative">
+          <button
+            :disabled="isSharing"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-zinc-500 hover:text-white disabled:opacity-50"
+            @click="shareImage"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z"/></svg>
+            {{ isSharing ? 'Sharing…' : 'Share' }}
+          </button>
+          <span
+            v-if="shareTooltip"
+            class="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-700 px-2 py-1 text-[10px] text-white"
+          >
+            {{ shareTooltip }}
+          </span>
+        </div>
+      </div>
     </header>
 
-    <!-- Loading tracks -->
-    <div v-if="store.isLoadingTracks" class="flex items-center justify-center py-8">
-      <BaseSpinner />
+    <!-- Loading skeleton -->
+    <div v-if="store.isLoadingTracks" class="space-y-2">
+      <SkeletonTierRow v-for="n in 5" :key="n" />
     </div>
 
     <!-- Error -->
@@ -162,8 +313,8 @@ onMounted(() => {
     </div>
 
     <template v-else>
-      <!-- Tier rows -->
-      <div class="space-y-2">
+      <!-- Tier rows (captured for export) -->
+      <div ref="tierListRef" class="space-y-2">
         <div
           v-for="tier in tiers"
           :key="tier"
@@ -191,9 +342,9 @@ onMounted(() => {
           >
             <template #item="{ element }: { element: SpotifyTrack }">
               <div
-                class="w-20 flex-shrink-0 cursor-grab overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 transition-transform active:cursor-grabbing active:scale-105"
+                class="group/tile relative w-20 flex-shrink-0 cursor-grab overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 transition-transform active:cursor-grabbing active:scale-105"
               >
-                <div class="aspect-square w-full bg-zinc-800">
+                <div class="relative aspect-square w-full bg-zinc-800">
                   <img
                     v-if="element.albumCoverUrl"
                     :src="element.albumCoverUrl"
@@ -202,6 +353,19 @@ onMounted(() => {
                     loading="lazy"
                   />
                   <div v-else class="flex h-full items-center justify-center text-xl text-zinc-600">🎵</div>
+
+                  <!-- Audio preview button -->
+                  <button
+                    v-if="element.previewUrl"
+                    class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover/tile:opacity-100"
+                    :class="{ '!opacity-100': currentPreviewId === element.id }"
+                    @click.stop="togglePreview(element)"
+                  >
+                    <!-- Play icon -->
+                    <svg v-if="currentPreviewId !== element.id" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white drop-shadow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+                    <!-- Pause icon -->
+                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-spotify-400 drop-shadow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                  </button>
                 </div>
                 <div class="p-1">
                   <p class="truncate text-[10px] font-semibold text-white">{{ element.name }}</p>
@@ -240,9 +404,9 @@ onMounted(() => {
           >
             <template #item="{ element }: { element: SpotifyTrack }">
               <div
-                class="w-20 flex-shrink-0 cursor-grab overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition-transform hover:border-spotify-400/50 active:cursor-grabbing active:scale-105"
+                class="group/tile relative w-20 flex-shrink-0 cursor-grab overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition-transform hover:border-spotify-400/50 active:cursor-grabbing active:scale-105"
               >
-                <div class="aspect-square w-full bg-zinc-800">
+                <div class="relative aspect-square w-full bg-zinc-800">
                   <img
                     v-if="element.albumCoverUrl"
                     :src="element.albumCoverUrl"
@@ -251,6 +415,17 @@ onMounted(() => {
                     loading="lazy"
                   />
                   <div v-else class="flex h-full items-center justify-center text-xl text-zinc-600">🎵</div>
+
+                  <!-- Audio preview button -->
+                  <button
+                    v-if="element.previewUrl"
+                    class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover/tile:opacity-100"
+                    :class="{ '!opacity-100': currentPreviewId === element.id }"
+                    @click.stop="togglePreview(element)"
+                  >
+                    <svg v-if="currentPreviewId !== element.id" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white drop-shadow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-spotify-400 drop-shadow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                  </button>
                 </div>
                 <div class="p-1">
                   <p class="truncate text-[10px] font-semibold text-white">{{ element.name }}</p>
