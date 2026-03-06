@@ -72,7 +72,7 @@ async function apiFetch<T>(endpoint: string): Promise<T> {
 
   if (response.status === 403) {
     // 403 Forbidden – parse the response body for the specific reason.
-    const errorData = await response.json().catch(() => ({})) as { error?: { message?: string } };
+    const errorData = await response.json().catch(() => ({} as { error?: { message?: string } }));
     const reason = errorData?.error?.message ?? '';
 
     if (reason === 'Insufficient client scope') {
