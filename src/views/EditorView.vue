@@ -138,21 +138,23 @@ const hasNoTracks = computed(() =>
 const dragGroup = { name: 'tierlist', pull: true, put: true };
 
 // ---------------------------------------------------------------------------
-// Image Export
+// Image Export & Sharing – shared config
 // ---------------------------------------------------------------------------
 const tierListRef = ref<HTMLElement | null>(null);
 const isExporting = ref(false);
+
+const canvasOptions = {
+  backgroundColor: '#09090b',
+  useCORS: true,
+  scale: 2,
+} as const;
 
 async function exportAsImage(): Promise<void> {
   if (!tierListRef.value || isExporting.value) return;
   isExporting.value = true;
 
   try {
-    const canvas = await html2canvas(tierListRef.value, {
-      backgroundColor: '#09090b',
-      useCORS: true,
-      scale: 2,
-    });
+    const canvas = await html2canvas(tierListRef.value, canvasOptions);
     const dataUrl = canvas.toDataURL('image/png');
     const link = document.createElement('a');
     link.download = `${playlistName.value}-tierlist.png`;
@@ -175,11 +177,7 @@ async function shareImage(): Promise<void> {
   isSharing.value = true;
 
   try {
-    const canvas = await html2canvas(tierListRef.value, {
-      backgroundColor: '#09090b',
-      useCORS: true,
-      scale: 2,
-    });
+    const canvas = await html2canvas(tierListRef.value, canvasOptions);
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, 'image/png'),
@@ -247,6 +245,8 @@ function togglePreview(track: SpotifyTrack): void {
 function stopPreview(): void {
   if (currentAudio.value) {
     currentAudio.value.pause();
+    currentAudio.value.removeAttribute('src');
+    currentAudio.value.load();
     currentAudio.value = null;
   }
   currentPreviewId.value = null;
