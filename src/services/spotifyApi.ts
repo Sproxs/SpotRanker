@@ -29,7 +29,7 @@ interface RawTrack {
 }
 
 interface RawPlaylistItem {
-  track: RawTrack | null;
+  item: RawTrack | null;
 }
 
 interface RawPlaylist {
@@ -37,7 +37,7 @@ interface RawPlaylist {
   name?: string;
   description?: string;
   images?: RawImage[];
-  tracks?: { total: number };
+  items?: { total: number };
   owner?: { display_name?: string };
 }
 
@@ -137,7 +137,7 @@ export async function fetchPlaylistTracks(playlistId: string): Promise<SpotifyTr
 
   while (hasMore) {
     const data = await apiFetch<SpotifyPaginatedResponse<RawPlaylistItem>>(
-      `/playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}&fields=items(track(id,name,preview_url,artists(name),album(name,images))),total,limit,offset,next`,
+      `/playlists/${playlistId}/items?limit=${limit}&offset=${offset}&fields=items(item(id,name,preview_url,artists(name),album(name,images))),total,limit,offset,next`,
     );
 
     for (const item of data.items) {
@@ -163,13 +163,13 @@ function mapPlaylist(raw: RawPlaylist): SpotifyPlaylist {
     name: raw.name ?? 'Unbenannte Playlist',
     description: raw.description ?? '',
     imageUrl: images.length > 0 ? images[0].url : null,
-    trackCount: raw.tracks?.total ?? 0,
+    trackCount: raw.items?.total ?? 0,
     owner: raw.owner?.display_name ?? '',
   };
 }
 
 function mapTrack(raw: RawPlaylistItem, playlistId: string): SpotifyTrack | null {
-  const track = raw.track;
+  const track = raw.item;
   if (!track || !track.id) return null; // skip local-only / unavailable tracks
 
   const artists = track.artists ?? [];
