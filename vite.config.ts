@@ -3,9 +3,10 @@ import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
 
-const base = process.env.GITHUB_ACTIONS
-  ? `/${process.env.GITHUB_REPOSITORY?.split('/')[1] ?? 'SpotRanker'}/`
-  : '/';
+const base =
+  process.env.CLOUDFLARE_PAGES || !process.env.GITHUB_ACTIONS
+    ? '/'
+    : `/${process.env.GITHUB_REPOSITORY?.split('/')[1] ?? 'SpotRanker'}/`;
 
 export default defineConfig({
   base,

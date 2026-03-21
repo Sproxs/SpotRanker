@@ -1,8 +1,8 @@
-name: Deploy to Cloudflare Pages
+name: Deploy to Cloudflare Pages (Staging)
 
 on:
   push:
-    branches: [main]
+    branches: [staging]
   workflow_dispatch:
 
 permissions:
@@ -31,7 +31,7 @@ jobs:
         env:
           CLOUDFLARE_PAGES: 'true'
           VITE_SPOTIFY_CLIENT_ID: ${{ secrets.VITE_SPOTIFY_CLIENT_ID }}
-          VITE_SPOTIFY_REDIRECT_URI: ${{ secrets.VITE_SPOTIFY_REDIRECT_URI }}
+          VITE_SPOTIFY_REDIRECT_URI: ${{ secrets.VITE_SPOTIFY_REDIRECT_URI_STAGING }}
 
       - name: Verify build output
         run: |
@@ -46,15 +46,16 @@ jobs:
           echo "✅ Build output verified: dist/ directory contains index.html"
           ls -la dist/
 
-      - name: Deploy to Cloudflare Pages
+      - name: Deploy to Cloudflare Pages (Staging)
         id: deploy
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: spotranker
+          projectName: spotranker-staging
           directory: dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: staging
 
       - name: Verify deployment URL
         run: |
@@ -63,7 +64,7 @@ jobs:
             echo "⚠️  No deployment URL returned. Check Cloudflare Pages dashboard manually."
             exit 0
           fi
-          echo "Deployment URL: $DEPLOY_URL"
+          echo "Staging deployment URL: $DEPLOY_URL"
 
           # Allow time for Cloudflare's CDN to propagate
           sleep 15
@@ -72,7 +73,7 @@ jobs:
           echo "HTTP Status: $HTTP_STATUS"
 
           if [ "$HTTP_STATUS" -eq 200 ]; then
-            echo "✅ Deployment verified successfully at $DEPLOY_URL"
+            echo "✅ Staging deployment verified successfully at $DEPLOY_URL"
           else
             echo "⚠️  Received HTTP $HTTP_STATUS — the site may still be propagating."
             echo "    Please check manually at: $DEPLOY_URL"

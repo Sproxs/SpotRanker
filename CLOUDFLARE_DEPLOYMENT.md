@@ -87,11 +87,44 @@ This ensures that all paths are served by `index.html`, allowing Vue Router to h
 
 ---
 
-## Automatic Deployments
+## Staging Environment
+
+A separate workflow (`.github/workflows/cloudflare-pages-staging.yml`) deploys the `staging` branch to an independent Cloudflare Pages project (`spotranker-staging`).
+
+### One-Time Setup for Staging
+
+1. In the Cloudflare Dashboard, create a second Pages project named **`spotranker-staging`** (Direct Upload, same as production).
+2. Add an additional GitHub repository secret:
+
+| Secret name | Value |
+|---|---|
+| `VITE_SPOTIFY_REDIRECT_URI_STAGING` | The redirect URI for the staging URL (e.g. `https://spotranker-staging.pages.dev/callback`) |
+
+3. Register the staging redirect URI in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard):
+
+```
+https://spotranker-staging.pages.dev/callback
+```
+
+### Environment Differences
+
+| Setting | Production | Staging |
+|---|---|---|
+| Trigger branch | `main` | `staging` |
+| Cloudflare Pages project | `spotranker` | `spotranker-staging` |
+| Spotify redirect URI secret | `VITE_SPOTIFY_REDIRECT_URI` | `VITE_SPOTIFY_REDIRECT_URI_STAGING` |
+| Expected URL | `https://spotranker.pages.dev` | `https://spotranker-staging.pages.dev` |
+
+The `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets are shared between both workflows.
+
+---
+
+
 
 Once set up, deployments are fully automatic:
 
-- **Push to `main`** → build + deploy to production.
+- **Push to `main`** → build + deploy to production (`spotranker` project).
+- **Push to `staging`** → build + deploy to staging (`spotranker-staging` project).
 - **`workflow_dispatch`** → manually trigger a deployment from the GitHub Actions tab.
 
 Cloudflare Pages also supports **branch preview deployments** if you connect the repository directly via the Cloudflare dashboard.
