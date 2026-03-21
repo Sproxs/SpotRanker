@@ -113,8 +113,10 @@ If the smoke test returns a non-200 status the workflow still succeeds (the site
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
+| Workflow fails with `Input required and not supplied: apiToken` | `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` secret is missing | Add both secrets under **Settings → Secrets and variables → Actions** (see One-Time Setup above) |
 | Build fails with type errors | TypeScript compile error | Run `npm run type-check` locally and fix errors |
 | Cloudflare deployment step fails | Missing or invalid secrets | Re-check `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` |
+| Assets return 404 after deploy | Wrong Vite base path | Ensure the `CF_PAGES_BUILD: 'true'` env var is set in the workflow build step — this tells Vite to use base `/` instead of `/SpotRanker/` |
 | Spotify login fails on the live site | Wrong redirect URI | Ensure `VITE_SPOTIFY_REDIRECT_URI` matches the Cloudflare Pages URL and is registered in Spotify |
 | Blank page / 404 on reload | Missing `_redirects` | Confirm `public/_redirects` is present and contains `/* /index.html 200` |
 | HTTP 5xx on smoke test | Cloudflare propagation delay | Wait a few minutes and visit the URL manually |
