@@ -17,6 +17,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check required secrets
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CF_API_TOKEN" ]; then
+            echo "❌ CLOUDFLARE_API_TOKEN secret is not configured."
+            echo "   Go to GitHub → Settings → Secrets and variables → Actions → New repository secret"
+            echo "   See CLOUDFLARE_DEPLOYMENT.md for detailed setup instructions."
+            exit 1
+          fi
+          if [ -z "$CF_ACCOUNT_ID" ]; then
+            echo "❌ CLOUDFLARE_ACCOUNT_ID secret is not configured."
+            echo "   Go to GitHub → Settings → Secrets and variables → Actions → New repository secret"
+            echo "   See CLOUDFLARE_DEPLOYMENT.md for detailed setup instructions."
+            exit 1
+          fi
+          echo "✅ Required Cloudflare secrets are present."
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -29,7 +48,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          CLOUDFLARE_PAGES: 'true'
+          # CF_PAGES_BUILD tells vite.config.ts to use base '/' (Cloudflare Pages serves from root)
+          CF_PAGES_BUILD: 'true'
           VITE_SPOTIFY_CLIENT_ID: ${{ secrets.VITE_SPOTIFY_CLIENT_ID }}
           VITE_SPOTIFY_REDIRECT_URI: ${{ secrets.VITE_SPOTIFY_REDIRECT_URI }}
 
@@ -77,3 +97,4 @@ jobs:
             echo "⚠️  Received HTTP $HTTP_STATUS — the site may still be propagating."
             echo "    Please check manually at: $DEPLOY_URL"
           fi
+
