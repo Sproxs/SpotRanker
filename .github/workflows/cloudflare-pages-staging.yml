@@ -1,0 +1,106 @@
+name: Deploy to Cloudflare Pages (Staging)
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required secrets
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SPOTIFY_REDIRECT_URI_STAGING: ${{ secrets.VITE_SPOTIFY_REDIRECT_URI_STAGING }}
+        run: |
+          if [ -z "$CF_API_TOKEN" ]; then
+            echo "❌ CLOUDFLARE_API_TOKEN secret is not configured."
+            echo "   Go to GitHub → Settings → Secrets and variables → Actions → New repository secret"
+            echo "   See CLOUDFLARE_DEPLOYMENT.md for detailed setup instructions."
+            exit 1
+          fi
+          if [ -z "$CF_ACCOUNT_ID" ]; then
+            echo "❌ CLOUDFLARE_ACCOUNT_ID secret is not configured."
+            echo "   Go to GitHub → Settings → Secrets and variables → Actions → New repository secret"
+            echo "   See CLOUDFLARE_DEPLOYMENT.md for detailed setup instructions."
+            exit 1
+          fi
+          if [ -z "$SPOTIFY_REDIRECT_URI_STAGING" ]; then
+            echo "❌ VITE_SPOTIFY_REDIRECT_URI_STAGING secret is not configured."
+            echo "   Add this secret so staging builds use the staging callback URL."
+            echo "   See CLOUDFLARE_DEPLOYMENT.md for detailed setup instructions."
+            exit 1
+          fi
+          echo "✅ Required staging secrets are present."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          CF_PAGES_BUILD: 'true'
+          VITE_SPOTIFY_CLIENT_ID: ${{ secrets.VITE_SPOTIFY_CLIENT_ID }}
+          VITE_SPOTIFY_REDIRECT_URI: ${{ secrets.VITE_SPOTIFY_REDIRECT_URI_STAGING }}
+
+      - name: Verify build output
+        run: |
+          if [ ! -d dist ]; then
+            echo "❌ Build failed: dist/ directory not found"
+            exit 1
+          fi
+          if [ ! -f dist/index.html ]; then
+            echo "❌ Build failed: dist/index.html not found"
+            exit 1
+          fi
+          echo "✅ Build output verified: dist/ directory contains index.html"
+          ls -la dist/
+
+      - name: Deploy to Cloudflare Pages (Staging)
+        id: deploy
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: spotranker-staging
+          directory: dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: staging
+
+      - name: Verify deployment URL
+        run: |
+          DEPLOY_URL="${{ steps.deploy.outputs.url }}"
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "⚠️  No deployment URL returned. Check Cloudflare Pages dashboard manually."
+            exit 0
+          fi
+          echo "Staging deployment URL: $DEPLOY_URL"
+
+          # Allow time for Cloudflare's CDN to propagate
+          sleep 15
+
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$DEPLOY_URL" --max-time 30 || echo "000")
+          echo "HTTP Status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ Staging deployment verified successfully at $DEPLOY_URL"
+          else
+            echo "⚠️  Received HTTP $HTTP_STATUS — the site may still be propagating."
+            echo "    Please check manually at: $DEPLOY_URL"
+          fi
