@@ -3,9 +3,13 @@ import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
 
-const base = process.env.GITHUB_ACTIONS
-  ? `/${process.env.GITHUB_REPOSITORY?.split('/')[1] ?? 'SpotRanker'}/`
-  : '/';
+// GitHub Pages serves the app under a sub-path (/<repo-name>/).
+// Cloudflare Pages serves from the root, so the base should be '/'.
+// CF_PAGES_BUILD is set by the Cloudflare Pages workflow to signal a root-path build.
+const base =
+  process.env.GITHUB_ACTIONS && !process.env.CF_PAGES_BUILD
+    ? `/${process.env.GITHUB_REPOSITORY?.split('/')[1] ?? 'SpotRanker'}/`
+    : '/';
 
 export default defineConfig({
   base,
