@@ -3,8 +3,7 @@ export const SPOTIFY_CONFIG = {
   redirectUri: import.meta.env.VITE_SPOTIFY_REDIRECT_URI as string ?? `${window.location.origin}${import.meta.env.BASE_URL}callback`,
   scopes: [
     'playlist-read-private',
-    'playlist-read-collaborative',
-    'user-read-private'
+    'playlist-read-collaborative'
   ],
   authorizeUrl: 'https://accounts.spotify.com/authorize',
   tokenUrl: 'https://accounts.spotify.com/api/token',

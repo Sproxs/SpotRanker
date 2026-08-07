@@ -74,17 +74,27 @@ export const usePlaylistStore = defineStore('playlists', () => {
     cachedPlaylistIds.value = await getCachedPlaylistIds();
   }
 
-  /** Load tracks for a specific playlist – uses cache if available, fetches if needed. */
-  async function loadTracks(playlistId: string): Promise<void> {
+  /**
+   * Load tracks for a specific playlist – uses cache if available, fetches if
+   * needed. With `forceRefresh` the cache is bypassed and overwritten; if the
+   * network fails, cached tracks are kept as a fallback.
+   * Returns where the tracks came from.
+   */
+  async function loadTracks(
+    playlistId: string,
+    options?: { forceRefresh?: boolean },
+  ): Promise<'cache' | 'network' | 'error'> {
     isLoadingTracks.value = true;
     error.value = null;
 
     try {
-      // 1. Try IndexedDB first (offline-first)
-      const cached = await loadPlaylistTracks(playlistId);
-      if (cached && cached.length > 0) {
-        currentTracks.value = cached;
-        return;
+      // 1. Try IndexedDB first (offline-first), unless a refresh is forced
+      if (!options?.forceRefresh) {
+        const cached = await loadPlaylistTracks(playlistId);
+        if (cached && cached.length > 0) {
+          currentTracks.value = cached;
+          return 'cache';
+        }
       }
 
       // 2. Fetch from API
@@ -94,9 +104,20 @@ export const usePlaylistStore = defineStore('playlists', () => {
       // 3. Persist to IndexedDB for offline use
       await savePlaylistTracks(playlistId, apiTracks);
       cachedPlaylistIds.value = await getCachedPlaylistIds();
+      return 'network';
     } catch (e) {
+      // Forced refresh gone wrong (e.g. offline) – fall back to the cache
+      // instead of wiping the editor.
+      if (options?.forceRefresh) {
+        const cached = await loadPlaylistTracks(playlistId);
+        if (cached && cached.length > 0) {
+          currentTracks.value = cached;
+          return 'cache';
+        }
+      }
       error.value = e instanceof Error ? e.message : 'Tracks konnten nicht geladen werden.';
       currentTracks.value = [];
+      return 'error';
     } finally {
       isLoadingTracks.value = false;
     }

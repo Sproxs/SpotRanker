@@ -15,7 +15,6 @@ export interface SpotifyTrack {
   artist: string;
   albumName: string;
   albumCoverUrl: string | null;
-  previewUrl: string | null;
   playlistId: string;
 }
 

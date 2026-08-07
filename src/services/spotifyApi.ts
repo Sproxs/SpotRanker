@@ -23,7 +23,6 @@ interface RawAlbum {
 interface RawTrack {
   id: string | null;
   name?: string;
-  preview_url?: string | null;
   artists?: RawArtist[];
   album?: RawAlbum;
 }
@@ -137,7 +136,7 @@ export async function fetchPlaylistTracks(playlistId: string): Promise<SpotifyTr
 
   while (hasMore) {
     const data = await apiFetch<SpotifyPaginatedResponse<RawPlaylistItem>>(
-      `/playlists/${playlistId}/items?limit=${limit}&offset=${offset}&fields=items(item(id,name,preview_url,artists(name),album(name,images))),total,limit,offset,next`,
+      `/playlists/${playlistId}/items?limit=${limit}&offset=${offset}&fields=items(item(id,name,artists(name),album(name,images))),total,limit,offset,next`,
     );
 
     for (const item of data.items) {
@@ -181,7 +180,6 @@ function mapTrack(raw: RawPlaylistItem, playlistId: string): SpotifyTrack | null
     artist: artists.map((a) => a.name).join(', ') || 'Unbekannter Künstler',
     albumName: track.album?.name ?? '',
     albumCoverUrl: images.length > 0 ? images[0].url : null,
-    previewUrl: track.preview_url ?? null,
     playlistId,
   };
 }

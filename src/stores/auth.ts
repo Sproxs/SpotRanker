@@ -28,7 +28,11 @@ export const useAuthStore = defineStore('auth', () => {
   // ---------------------------------------------------------------------------
   // Computed
   // ---------------------------------------------------------------------------
-  const isAuthenticated = computed(() => !!accessToken.value && Date.now() < expiresAt.value);
+  // An expired access token still counts as authenticated when a refresh
+  // token exists – getAccessToken() refreshes silently before the next call.
+  const isAuthenticated = computed(
+    () => !!accessToken.value && (Date.now() < expiresAt.value || !!refreshToken.value),
+  );
   const tokenNeedsRefresh = computed(() => !!accessToken.value && Date.now() >= expiresAt.value - 5 * 60 * 1000);
 
   // ---------------------------------------------------------------------------

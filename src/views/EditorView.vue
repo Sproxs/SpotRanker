@@ -141,6 +141,17 @@ async function executeSave(ranking: RankingData): Promise<void> {
   isSaving = false;
 }
 
+function buildRanking(): RankingData {
+  return {
+    S: tierData.S.map((t) => t.id),
+    A: tierData.A.map((t) => t.id),
+    B: tierData.B.map((t) => t.id),
+    C: tierData.C.map((t) => t.id),
+    D: tierData.D.map((t) => t.id),
+    unranked: tierData.unranked.map((t) => t.id),
+  };
+}
+
 function debouncedSave(): void {
   if (saveTimer !== null) {
     clearTimeout(saveTimer);
@@ -148,16 +159,8 @@ function debouncedSave(): void {
   }
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    const ranking: RankingData = {
-      S: tierData.S.map((t) => t.id),
-      A: tierData.A.map((t) => t.id),
-      B: tierData.B.map((t) => t.id),
-      C: tierData.C.map((t) => t.id),
-      D: tierData.D.map((t) => t.id),
-      unranked: tierData.unranked.map((t) => t.id),
-    };
     // Fire-and-forget: executeSave handles errors internally
-    void executeSave(ranking);
+    void executeSave(buildRanking());
   }, 500);
 }
 
@@ -282,55 +285,33 @@ async function shareImage(): Promise<void> {
 const shareTooltip = ref('');
 
 // ---------------------------------------------------------------------------
-// Audio Preview (with proper cleanup to prevent memory leaks)
+// Manual refresh – bypass the track cache and re-hydrate the tier list
 // ---------------------------------------------------------------------------
-const currentAudio = ref<HTMLAudioElement | null>(null);
-const currentPreviewId = ref<string | null>(null);
-let audioEndedHandler: (() => void) | null = null;
+const isRefreshing = ref(false);
 
-function togglePreview(track: SpotifyTrack): void {
-  if (!track.previewUrl) return;
+async function refreshTracks(): Promise<void> {
+  if (isRefreshing.value || store.isLoadingTracks) return;
+  isRefreshing.value = true;
 
-  // If clicking the same track that's already playing, stop it
-  if (currentPreviewId.value === track.id) {
-    stopPreview();
-    return;
-  }
-
-  // Stop any existing preview
-  stopPreview();
-
-  const audio = new Audio(track.previewUrl);
-  audio.volume = 0.5;
-
-  audioEndedHandler = () => {
-    currentPreviewId.value = null;
-    currentAudio.value = null;
-    audioEndedHandler = null;
-  };
-  audio.addEventListener('ended', audioEndedHandler);
-
-  audio.play().catch((err) => {
-    console.error('[EditorView] Audio preview failed:', err);
-    stopPreview();
-  });
-
-  currentAudio.value = audio;
-  currentPreviewId.value = track.id;
-}
-
-function stopPreview(): void {
-  if (currentAudio.value) {
-    if (audioEndedHandler) {
-      currentAudio.value.removeEventListener('ended', audioEndedHandler);
-      audioEndedHandler = null;
+  try {
+    // Persist the current ranking immediately so re-hydration uses fresh state
+    if (saveTimer !== null) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
     }
-    currentAudio.value.pause();
-    currentAudio.value.removeAttribute('src');
-    currentAudio.value.load();
-    currentAudio.value = null;
+    await executeSave(buildRanking());
+
+    initialPopulationDone.value = false;
+    const source = await store.loadTracks(props.playlistId, { forceRefresh: true });
+
+    if (source === 'network') {
+      showStatus('Playlist aktualisiert.');
+    } else if (source === 'cache') {
+      showStatus('Keine Verbindung – zeige zwischengespeicherte Tracks.');
+    }
+  } finally {
+    isRefreshing.value = false;
   }
-  currentPreviewId.value = null;
 }
 
 onBeforeUnmount(() => {
@@ -343,7 +324,6 @@ onBeforeUnmount(() => {
     clearTimeout(statusTimer);
     statusTimer = null;
   }
-  stopPreview();
 });
 
 onMounted(() => {
@@ -361,6 +341,15 @@ onMounted(() => {
 
       <!-- Action buttons -->
       <div v-if="!store.isLoadingTracks && !store.error" class="flex flex-wrap gap-2">
+        <button
+          :disabled="isRefreshing"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-zinc-500 hover:text-white disabled:opacity-50"
+          @click="refreshTracks"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" :class="{ 'animate-spin': isRefreshing }" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+          {{ isRefreshing ? 'Aktualisiere…' : 'Aktualisieren' }}
+        </button>
+
         <button
           :disabled="isExporting"
           class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-zinc-500 hover:text-white disabled:opacity-50"
@@ -460,19 +449,6 @@ onMounted(() => {
                     loading="lazy"
                   />
                   <div v-else class="flex h-full items-center justify-center text-xl text-zinc-600">🎵</div>
-
-                  <!-- Audio preview button -->
-                  <button
-                    v-if="element.previewUrl"
-                    class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover/tile:opacity-100"
-                    :class="{ '!opacity-100': currentPreviewId === element.id }"
-                    @click.stop="togglePreview(element)"
-                  >
-                    <!-- Play icon -->
-                    <svg v-if="currentPreviewId !== element.id" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white drop-shadow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
-                    <!-- Pause icon -->
-                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-spotify-400 drop-shadow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
-                  </button>
                 </div>
                 <div class="p-1">
                   <p class="truncate text-[10px] font-semibold text-white">{{ element.name }}</p>
@@ -524,17 +500,6 @@ onMounted(() => {
                     loading="lazy"
                   />
                   <div v-else class="flex h-full items-center justify-center text-xl text-zinc-600">🎵</div>
-
-                  <!-- Audio preview button -->
-                  <button
-                    v-if="element.previewUrl"
-                    class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover/tile:opacity-100"
-                    :class="{ '!opacity-100': currentPreviewId === element.id }"
-                    @click.stop="togglePreview(element)"
-                  >
-                    <svg v-if="currentPreviewId !== element.id" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white drop-shadow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
-                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-spotify-400 drop-shadow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
-                  </button>
                 </div>
                 <div class="p-1">
                   <p class="truncate text-[10px] font-semibold text-white">{{ element.name }}</p>
