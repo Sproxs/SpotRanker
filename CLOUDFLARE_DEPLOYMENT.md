@@ -43,8 +43,14 @@ These are set once when the project is created and should match:
 
 ## Environment variables
 
-Set these in the Cloudflare dashboard under **Settings → Variables and Secrets**. They are read at
-build time by Vite, so a change only takes effect on the next deployment.
+Set these in the Cloudflare dashboard under **Settings → Builds**, as build variables. They are read
+at build time by Vite, so a change only takes effect on the next deployment.
+
+Note that this is *not* the **Settings → Variables and Secrets** section. That one configures
+runtime bindings for a Worker script, and it refuses an assets-only Worker with "Variables cannot be
+added to a Worker that only has static assets". Runtime bindings would not help here anyway: Vite
+inlines `VITE_*` values into the bundle during the build, and the browser cannot read Worker
+bindings.
 
 | Variable | Required | Value |
 |---|---|---|
@@ -95,7 +101,8 @@ npm run dev
 |---|---|---|
 | Deploy fails with `Invalid _redirects configuration … Infinite loop detected` | A `_redirects` file is present again | Workers handles SPA routing through `not_found_handling`; the file must not exist |
 | Build fails with type errors | TypeScript error | Run `npm run type-check` locally and fix |
-| Site loads but Spotify login does nothing | `VITE_SPOTIFY_CLIENT_ID` not set in Cloudflare | Add it under Settings → Variables and Secrets, then redeploy |
+| Site loads but Spotify login does nothing | `VITE_SPOTIFY_CLIENT_ID` not set in Cloudflare | Add it under Settings → Builds as a build variable, then redeploy |
+| "Variables cannot be added to a Worker that only has static assets" | Wrong section — those are runtime variables | Build variables live under Settings → Builds |
 | Login fails with `INVALID_CLIENT` | Callback URL not registered at Spotify | Add the exact deployment URL plus `/callback` to the app's Redirect URIs |
 | 404 when reloading on `/dashboard` | `not_found_handling` missing from `wrangler.jsonc` | Restore the `assets` block shown above |
 | Changed an environment variable but nothing changed | Variables are baked in at build time | Trigger a new deployment |
