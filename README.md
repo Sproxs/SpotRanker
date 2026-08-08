@@ -116,7 +116,16 @@ npm run dev:worker   # wrangler dev on http://localhost:8787 (serves /api/*)
 Vite proxies `/api` to the Worker, so the app works end-to-end at `http://localhost:5173`.
 The `.env` step above is only needed for the optional Spotify login — the scraper needs no credentials.
 
-### 5. Build for production
+### 5. Run the tests
+
+```bash
+npm test             # Vitest unit suite (Spotify fully mocked, runs offline)
+```
+
+Live smoke tests against real Spotify and the manual E2E checklist are described in
+[docs/TESTING.md](docs/TESTING.md).
+
+### 6. Build for production
 
 ```bash
 npm run build
