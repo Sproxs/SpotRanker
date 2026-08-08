@@ -11,7 +11,7 @@ Every push to the `main` branch triggers the **Deploy to Cloudflare Pages** GitH
 1. Installs Node.js 20 and project dependencies.
 2. Builds the Vite app (`npm run build`) and injects environment variables from GitHub Secrets.
 3. Verifies that the `dist/` output directory and `dist/index.html` exist.
-4. Deploys the `dist/` folder to Cloudflare Pages using [`cloudflare/pages-action`](https://github.com/cloudflare/pages-action).
+4. Deploys the `dist/` folder to Cloudflare Pages using [`cloudflare/wrangler-action`](https://github.com/cloudflare/wrangler-action) (`wrangler pages deploy`).
 5. Checks the live deployment URL for an HTTP 200 response as a post-deployment smoke test.
 
 ---
@@ -148,7 +148,7 @@ If the smoke test returns a non-200 status the workflow still succeeds (the site
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Workflow fails with `Input required and not supplied: apiToken` | `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` secret is missing | Add both secrets under **Settings → Secrets and variables → Actions** (see One-Time Setup above) |
+| Workflow fails at the "Check required secrets" step | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, or `VITE_SPOTIFY_CLIENT_ID` secret is missing | Add the missing secrets under **Settings → Secrets and variables → Actions** (see One-Time Setup above) |
 | Build fails with type errors | TypeScript compile error | Run `npm run type-check` locally and fix errors |
 | Cloudflare deployment step fails | Missing or invalid secrets | Re-check `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` |
 | Assets return 404 after deploy | Wrong Vite base path | Ensure the `CF_PAGES_BUILD: 'true'` env var is set in both Cloudflare workflows' build steps — this tells Vite to use base `/` instead of `/SpotRanker/` |
