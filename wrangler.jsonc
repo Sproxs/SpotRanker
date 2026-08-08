@@ -2,13 +2,20 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "spotranker",
   "compatibility_date": "2026-08-08",
+  // The Worker hosts the Spotify scraper backend under /api/*. wrangler bundles
+  // it at deploy time; the frontend build (Vite → ./dist) is untouched.
+  "main": "worker/index.ts",
   "assets": {
     "directory": "./dist",
     // Vue Router owns every path below /, so unmatched requests must return
     // index.html instead of a 404. This replaces the _redirects file that
     // Cloudflare Pages used: on Workers that file collides with the built-in
     // stripping of ".html" and "/index" and is rejected as a redirect loop.
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // Without this, the SPA fallback above would return index.html for /api/*
+    // too and the Worker would never run. run_worker_first routes ONLY the API
+    // prefix to the Worker; every other path keeps the static-asset + SPA path.
+    "run_worker_first": ["/api/*"]
   },
   "observability": {
     "enabled": true

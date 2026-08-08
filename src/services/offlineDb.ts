@@ -1,5 +1,5 @@
 import localforage from 'localforage';
-import type { SpotifyPlaylist, SpotifyTrack, RankingData } from '@/types/spotify';
+import type { SpotifyPlaylist, SpotifyTrack, RankingData, LibraryPlaylist } from '@/types/spotify';
 
 // ---------------------------------------------------------------------------
 // Separate stores for playlists, tracks & rankings
@@ -45,6 +45,61 @@ export async function loadPlaylists(): Promise<SpotifyPlaylist[]> {
     console.error('[offlineDb] Playlists konnten nicht geladen werden:', err);
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Library helpers (scraper-first flow – playlists the user added by link)
+//
+// Stored on the same instance as the OAuth playlist cache but under a separate
+// key, so the two flows never collide.
+// ---------------------------------------------------------------------------
+
+const LIBRARY_KEY = 'libraryPlaylists';
+
+/** Load the persistent library (returns empty array if none saved). */
+export async function loadLibrary(): Promise<LibraryPlaylist[]> {
+  try {
+    return (await playlistStore.getItem<LibraryPlaylist[]>(LIBRARY_KEY)) ?? [];
+  } catch (err) {
+    console.error('[offlineDb] Bibliothek konnte nicht geladen werden:', err);
+    return [];
+  }
+}
+
+/** Persist the full library array. */
+export async function saveLibrary(library: LibraryPlaylist[]): Promise<void> {
+  try {
+    await playlistStore.setItem(LIBRARY_KEY, library);
+  } catch (err) {
+    console.error('[offlineDb] Bibliothek konnte nicht gespeichert werden:', err);
+    throw new Error(
+      `Bibliothek konnte nicht gespeichert werden: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/** Add (or update) a library entry, newest first, deduped by id. Returns the new list. */
+export async function addToLibrary(entry: LibraryPlaylist): Promise<LibraryPlaylist[]> {
+  const current = await loadLibrary();
+  const withoutDupe = current.filter((p) => p.id !== entry.id);
+  const updated = [entry, ...withoutDupe];
+  await saveLibrary(updated);
+  return updated;
+}
+
+/**
+ * Remove a library entry and its cached tracks + ranking, so nothing is
+ * orphaned. Returns the new library list.
+ */
+export async function removeFromLibrary(id: string): Promise<LibraryPlaylist[]> {
+  const current = await loadLibrary();
+  const updated = current.filter((p) => p.id !== id);
+  await saveLibrary(updated);
+  await Promise.all([
+    trackStore.removeItem(`tracks_${id}`).catch(() => {}),
+    rankingStore.removeItem(`ranking_${id}`).catch(() => {}),
+  ]);
+  return updated;
 }
 
 // ---------------------------------------------------------------------------

@@ -13,20 +13,17 @@ const auth = useAuthStore();
       </RouterLink>
 
       <nav class="flex items-center gap-2 text-sm">
-        <template v-if="auth.isAuthenticated">
-          <RouterLink to="/dashboard" class="rounded-lg px-3 py-1.5 text-zinc-300 transition hover:bg-zinc-800 hover:text-white">
-            Dashboard
-          </RouterLink>
-          <button
-            class="rounded-lg px-3 py-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-red-400"
-            @click="auth.logout()"
-          >
-            Logout
-          </button>
-        </template>
-        <template v-else>
-          <BaseButton class="!px-3 !py-1.5 !text-xs" @click="auth.login()">Login</BaseButton>
-        </template>
+        <RouterLink to="/dashboard" class="rounded-lg px-3 py-1.5 text-zinc-300 transition hover:bg-zinc-800 hover:text-white">
+          Dashboard
+        </RouterLink>
+        <button
+          v-if="auth.isAuthenticated"
+          class="rounded-lg px-3 py-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-red-400"
+          @click="auth.logout()"
+        >
+          Logout
+        </button>
+        <BaseButton v-else class="!px-3 !py-1.5 !text-xs" @click="auth.login()">Login</BaseButton>
       </nav>
     </div>
   </header>

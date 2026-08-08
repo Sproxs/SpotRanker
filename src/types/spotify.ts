@@ -18,6 +18,25 @@ export interface SpotifyTrack {
   playlistId: string;
 }
 
+/**
+ * Where a playlist's data comes from:
+ * - `scraped`  – fetched via the built-in scraper backend (/api/*), no login.
+ * - `account`  – fetched via the user's authenticated Spotify account (OAuth).
+ */
+export type PlaylistSource = 'scraped' | 'account';
+
+/**
+ * A playlist the user has added to their local library (scraper-first flow).
+ * Persisted in IndexedDB so the library survives reloads without a login.
+ */
+export interface LibraryPlaylist extends SpotifyPlaylist {
+  source: PlaylistSource;
+  /** Epoch ms when the entry was added – used for newest-first ordering. */
+  addedAt: number;
+  /** true when the data is incomplete (e.g. scraper embed fallback). */
+  degraded?: boolean;
+}
+
 /** Ranking data – maps tier keys to arrays of track IDs. */
 export interface RankingData {
   S: string[];

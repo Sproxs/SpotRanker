@@ -5,4 +5,5 @@ dist
 .DS_Store
 *.local
 .env
+.wrangler
 .claude/settings.local.json
