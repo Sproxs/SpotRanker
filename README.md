@@ -112,7 +112,10 @@ The app will be available at `http://localhost:5173`.
 npm run build
 ```
 
-Static output is placed in the `dist/` directory and can be served by any static hosting provider (e.g. Vercel, Netlify, GitHub Pages).
+Static output is placed in the `dist/` directory.
+
+Pushes to `main` are deployed automatically to Cloudflare, which builds the project straight from
+this repository — see [CLOUDFLARE_DEPLOYMENT.md](CLOUDFLARE_DEPLOYMENT.md).
 
 ---
 
