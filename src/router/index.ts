@@ -32,8 +32,12 @@ const router = createRouter({
 router.beforeEach((to) => {
   if (to.meta.requiresAuth) {
     const token = localStorage.getItem('sp_access_token');
+    const refreshToken = localStorage.getItem('sp_refresh_token');
     const expiresAt = Number(localStorage.getItem('sp_expires_at')) || 0;
-    if (!token || Date.now() >= expiresAt) {
+    // An expired access token is fine as long as a refresh token exists –
+    // the API layer refreshes silently on the first request.
+    const hasValidSession = !!token && (Date.now() < expiresAt || !!refreshToken);
+    if (!hasValidSession) {
       return { name: 'home' };
     }
   }

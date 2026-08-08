@@ -34,8 +34,8 @@
 - 🔐 **Spotify OAuth 2.0 (PKCE)** — secure login with no server-side secrets
 - 🎵 **Playlist browser** — pick any playlist you own or follow
 - 🖱️ **Drag & Drop** — move tracks between tiers with smooth animations
-- 🔊 **Audio previews** — tap a track tile to hear a 30-second preview
 - 💾 **Offline persistence** — rankings stored in IndexedDB via localForage
+- 🔄 **Refresh** — re-sync a playlist's tracks from Spotify on demand
 - 📸 **Export as image** — download your tier list as a PNG
 - 📤 **Share** — native Web Share API with clipboard fallback
 - 📱 **Installable PWA** — add to home screen on mobile or desktop

@@ -36,7 +36,6 @@ function goToDashboard() {
           Login with Spotify
         </BaseButton>
         <BaseButton v-else @click="goToDashboard">Zum Dashboard</BaseButton>
-        <BaseButton variant="secondary" @click="router.push('/editor/demo')">Demo öffnen</BaseButton>
       </div>
 
       <p v-if="auth.error" class="rounded-lg border border-red-800/60 bg-red-950/40 px-3 py-2 text-sm text-red-300">
