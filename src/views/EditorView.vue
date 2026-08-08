@@ -16,19 +16,19 @@ const router = useRouter();
 const store = usePlaylistStore();
 const auth = useAuthStore();
 
-// If the user was force-logged out (e.g. 403 scope error), redirect to home.
-watch(
-  () => auth.isAuthenticated,
-  (isAuth) => {
-    if (!isAuth) {
-      router.replace({ name: 'home' });
-    }
-  },
-);
-
 const playlistName = computed(() => {
-  const p = store.playlists.find((pl) => pl.id === props.playlistId);
+  const p =
+    store.library.find((pl) => pl.id === props.playlistId) ??
+    store.playlists.find((pl) => pl.id === props.playlistId);
   return p?.name ?? 'Playlist';
+});
+
+// Whether this playlist is loaded via the authenticated account (OAuth) rather
+// than the scraper – only then does an "erneut einloggen" prompt make sense.
+const isAccountPlaylist = computed(() => {
+  const entry = store.library.find((pl) => pl.id === props.playlistId);
+  if (entry) return entry.source === 'account';
+  return auth.isAuthenticated;
 });
 
 // ---------------------------------------------------------------------------
@@ -400,6 +400,7 @@ onMounted(() => {
     >
       <p>{{ store.error }}</p>
       <button
+        v-if="isAccountPlaylist"
         class="mt-3 rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200"
         @click="auth.logout(); router.replace({ name: 'home' })"
       >

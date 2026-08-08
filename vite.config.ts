@@ -8,6 +8,14 @@ const base = '/';
 
 export default defineConfig({
   base,
+  // In dev, the scraper Worker runs separately (`npm run dev:worker` →
+  // wrangler dev on :8787). Proxy /api there so the browser's same-origin
+  // relative calls reach it with clean HMR for the SPA.
+  server: {
+    proxy: {
+      '/api': 'http://localhost:8787',
+    },
+  },
   plugins: [
     vue(),
     VitePWA({
@@ -37,7 +45,27 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
+        // The scraper API is dynamic – never let the SPA navigation fallback
+        // serve index.html for it, and never precache it.
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
+          {
+            // Scraper backend: fresh data when online, cached responses as a
+            // short-lived offline fallback.
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'spotranker-api',
+              networkTimeoutSeconds: 8,
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 15, // 15 minutes
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
           {
             urlPattern: /^https:\/\/i\.scdn\.co\/.*/i,
             handler: 'CacheFirst',

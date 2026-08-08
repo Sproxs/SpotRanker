@@ -25,14 +25,15 @@
 
 ## About
 
-**SpotRanker** lets you connect your Spotify account and drag-and-drop tracks from any of your playlists into a classic S / A / B / C / D tier list. Rankings are saved locally in your browser (IndexedDB), so you can close the tab and pick up right where you left off — even without an internet connection after the first load.
+**SpotRanker** turns any public Spotify playlist into a classic S / A / B / C / D tier list — just paste a playlist (or profile) link, **no Spotify login required**. Data is fetched by a built-in scraper backend running as a Cloudflare Worker under `/api/*`, so there are no API credentials or premium account to manage. Signing in with Spotify is still optional and unlocks ranking your own **private** playlists. Rankings are saved locally in your browser (IndexedDB), so you can close the tab and pick up right where you left off — even offline after the first load.
 
 ---
 
 ## Features
 
-- 🔐 **Spotify OAuth 2.0 (PKCE)** — secure login with no server-side secrets
-- 🎵 **Playlist browser** — pick any playlist you own or follow
+- 🔗 **No login needed** — paste a public playlist or profile link; a built-in scraper (Cloudflare Worker) fetches the data
+- 🔐 **Optional Spotify OAuth 2.0 (PKCE)** — sign in only to rank your own private playlists
+- 🎵 **Local library** — added playlists persist across reloads
 - 🖱️ **Drag & Drop** — move tracks between tiers with smooth animations
 - 💾 **Offline persistence** — rankings stored in IndexedDB via localForage
 - 🔄 **Refresh** — re-sync a playlist's tracks from Spotify on demand
@@ -100,11 +101,20 @@ You can obtain a Client ID from the [Spotify Developer Dashboard](https://develo
 
 ### 4. Start the development server
 
+The frontend and the scraper Worker run as two processes. In one terminal:
+
 ```bash
-npm run dev
+npm run dev          # Vite dev server on http://localhost:5173
 ```
 
-The app will be available at `http://localhost:5173`.
+In a second terminal:
+
+```bash
+npm run dev:worker   # wrangler dev on http://localhost:8787 (serves /api/*)
+```
+
+Vite proxies `/api` to the Worker, so the app works end-to-end at `http://localhost:5173`.
+The `.env` step above is only needed for the optional Spotify login — the scraper needs no credentials.
 
 ### 5. Build for production
 
@@ -121,12 +131,12 @@ this repository — see [CLOUDFLARE_DEPLOYMENT.md](CLOUDFLARE_DEPLOYMENT.md).
 
 ## Usage
 
-1. Open the app and click **Login with Spotify**.
-2. After authorizing, you are taken to your **Dashboard** where your playlists are listed.
-3. Click a playlist to open the **Tier Editor**.
-4. Drag tracks from the **Unranked Pool** at the bottom into the S / A / B / C / D rows.
-5. Your ranking is saved automatically — navigate away and come back anytime.
-6. Use **Save as Image** to download a PNG of your tier list, or **Share** to send it directly.
+1. Open the app and paste a public Spotify **playlist link** (or a **profile link** to list that profile's public playlists) — no login needed.
+2. The playlist is added to your local **library** on the Dashboard. Click it to open the **Tier Editor**.
+3. Drag tracks from the **Unranked Pool** at the bottom into the S / A / B / C / D rows.
+4. Your ranking is saved automatically — navigate away and come back anytime.
+5. Use **Save as Image** to download a PNG of your tier list, or **Share** to send it directly.
+6. *(Optional)* Click **Login with Spotify** to also rank your own **private** playlists.
 
 ---
 
