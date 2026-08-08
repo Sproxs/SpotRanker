@@ -1,146 +1,91 @@
-# Cloudflare Pages Deployment Guide
+# Cloudflare Deployment Guide
 
-This document describes how SpotRanker is built and deployed automatically to [Cloudflare Pages](https://pages.cloudflare.com/).
-
----
-
-## Overview
-
-Every push to the `main` branch triggers the **Deploy to Cloudflare Pages** GitHub Actions workflow (`.github/workflows/cloudflare-pages.yml`), which:
-
-1. Installs Node.js 20 and project dependencies.
-2. Builds the Vite app (`npm run build`) and injects environment variables from GitHub Secrets.
-3. Verifies that the `dist/` output directory and `dist/index.html` exist.
-4. Deploys the `dist/` folder to Cloudflare Pages using [`cloudflare/wrangler-action`](https://github.com/cloudflare/wrangler-action) (`wrangler pages deploy`).
-5. Checks the live deployment URL for an HTTP 200 response as a post-deployment smoke test.
+SpotRanker is deployed to Cloudflare as a **Worker with static assets**, built directly from this
+repository via Cloudflare's GitHub integration. There is no deployment workflow in GitHub Actions —
+Cloudflare clones the repo, runs the build and publishes the result itself.
 
 ---
 
-## One-Time Setup
+## How a deployment happens
 
-### 1. Create a Cloudflare Pages project
+1. You push to `main`.
+2. Cloudflare clones the repository and installs dependencies with `npm clean-install`.
+3. It runs the build command `npm run build`, producing `dist/`.
+4. It runs the deploy command `npx wrangler deploy`, which reads `wrangler.jsonc` and uploads
+   `dist/` as the Worker's static assets.
 
-1. Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com/) and open **Pages**.
-2. Click **Create a project → Direct Upload** (the GitHub Actions workflow handles deployments, so no Git integration is needed here).
-3. Name the project **`spotranker`** (must match the `projectName` in the workflow).
-
-### 2. Generate a Cloudflare API token
-
-1. In the Cloudflare Dashboard, go to **My Profile → API Tokens → Create Token**.
-2. Use the **Edit Cloudflare Workers** template, or create a custom token with the **Cloudflare Pages: Edit** permission.
-3. Copy the generated token — you will only see it once.
-
-### 3. Find your Cloudflare Account ID
-
-Your Account ID is visible in the right-hand panel of any Cloudflare Dashboard page (e.g. under **Workers & Pages**).
-
-### 4. Add GitHub repository secrets
-
-In your GitHub repository, go to **Settings → Secrets and variables → Actions → New repository secret** and add:
-
-| Secret name | Value |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | The API token created above |
-| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare Account ID |
-| `VITE_SPOTIFY_CLIENT_ID` | Your Spotify application Client ID |
-| `VITE_SPOTIFY_REDIRECT_URI` | The redirect URI for the production Cloudflare Pages URL (e.g. `https://spotranker.pages.dev/callback`) |
-
-### 5. Register the redirect URI in Spotify
-
-Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), select your application, and add the Cloudflare Pages URL as an allowed Redirect URI:
-
-```
-https://spotranker.pages.dev/callback
-```
+Build logs are in the Cloudflare dashboard under the project's **Deployments** tab.
 
 ---
 
-## Cloudflare Pages Build Settings
+## Project configuration
 
-If you prefer to use Cloudflare's built-in Git integration instead of the GitHub Actions workflow, configure your Cloudflare Pages project with:
+`wrangler.jsonc` is committed, so every build uses the same settings instead of the ones Cloudflare
+would otherwise generate on the fly:
+
+| Key | Value | Why |
+|---|---|---|
+| `name` | `spotranker` | Worker name; determines the default `*.workers.dev` hostname |
+| `assets.directory` | `./dist` | Vite's build output |
+| `assets.not_found_handling` | `single-page-application` | Serves `index.html` for unmatched paths so Vue Router can handle them |
+
+### Dashboard build settings
+
+These are set once when the project is created and should match:
 
 | Setting | Value |
 |---|---|
-| Framework preset | None |
 | Build command | `npm run build` |
-| Build output directory | `dist` |
-| Node.js version | `20` |
-
-Environment variables to add in the Cloudflare Pages dashboard:
-
-| Variable | Value |
-|---|---|
-| `VITE_SPOTIFY_CLIENT_ID` | Your Spotify Client ID |
-| `VITE_SPOTIFY_REDIRECT_URI` | Your Cloudflare Pages callback URL |
+| Deploy command | `npx wrangler deploy` |
+| Output directory | `dist` |
 
 ---
 
-## SPA Routing
+## Environment variables
 
-Cloudflare Pages uses `public/_redirects` to handle client-side routing. The file contains:
+Set these in the Cloudflare dashboard under **Settings → Variables and Secrets**. They are read at
+build time by Vite, so a change only takes effect on the next deployment.
 
-```
-/* /index.html 200
-```
-
-This ensures that all paths are served by `index.html`, allowing Vue Router to handle navigation on the client side.
-
----
-
-## Staging Environment
-
-A separate workflow (`.github/workflows/cloudflare-pages-staging.yml`) deploys the `staging` branch to an independent Cloudflare Pages project (`spotranker-staging`).
-
-### One-Time Setup for Staging
-
-1. In the Cloudflare Dashboard, create a second Pages project named **`spotranker-staging`** (Direct Upload, same as production).
-2. Add an additional GitHub repository secret:
-
-| Secret name | Value |
-|---|---|
-| `VITE_SPOTIFY_REDIRECT_URI_STAGING` | The redirect URI for the staging URL (e.g. `https://spotranker-staging.pages.dev/callback`) |
-
-The staging workflow also validates that `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are configured before attempting deployment.
-
-3. Register the staging redirect URI in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard):
-
-```
-https://spotranker-staging.pages.dev/callback
-```
-
-### Environment Differences
-
-| Setting | Production | Staging |
+| Variable | Required | Value |
 |---|---|---|
-| Trigger branch | `main` | `staging` |
-| Cloudflare Pages project | `spotranker` | `spotranker-staging` |
-| Spotify redirect URI secret | `VITE_SPOTIFY_REDIRECT_URI` | `VITE_SPOTIFY_REDIRECT_URI_STAGING` |
-| Expected URL | `https://spotranker.pages.dev` | `https://spotranker-staging.pages.dev` |
+| `VITE_SPOTIFY_CLIENT_ID` | yes | Your Spotify application's Client ID |
+| `VITE_SPOTIFY_REDIRECT_URI` | no | Leave unset — see below |
 
-The `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets are shared between both workflows.
+Without `VITE_SPOTIFY_CLIENT_ID` the build still succeeds, but the client ID becomes an empty string
+and Spotify login fails at runtime.
 
----
+`VITE_SPOTIFY_REDIRECT_URI` is deliberately left unset. When it is absent,
+`src/config/spotify.ts` falls back to `window.location.origin + BASE_URL + "callback"`, so the app
+derives the correct callback URL from whatever hostname it is served under. Setting it to an empty
+string does *not* work — an empty string is not nullish, so the fallback would not apply.
 
-
-
-Once set up, deployments are fully automatic:
-
-- **Push to `main`** → build + deploy to production (`spotranker` project).
-- **Push to `staging`** → build + deploy to staging (`spotranker-staging` project).
-- **`workflow_dispatch`** → manually trigger a deployment from the GitHub Actions tab.
-
-Cloudflare Pages also supports **branch preview deployments** if you connect the repository directly via the Cloudflare dashboard.
+A Spotify **Client Secret** is not needed; the app uses the PKCE authorization flow.
 
 ---
 
-## Post-Deployment Verification
+## Spotify setup
 
-The workflow performs two verification steps:
+In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), open the app and add
+the deployment's callback URL under **Redirect URIs**:
 
-1. **Build output check**: Confirms that `dist/` and `dist/index.html` were created before deploying.
-2. **URL smoke test**: After deployment, sends an HTTP request to the deployment URL and logs the status code. A `200` response confirms the site is live.
+```
+https://<your-worker-hostname>/callback
+```
 
-If the smoke test returns a non-200 status the workflow still succeeds (the site may still be propagating across Cloudflare's CDN). Visit the URL manually if needed.
+The hostname is shown in the Cloudflare dashboard after the first successful deployment — either the
+generated `*.workers.dev` address or your own custom domain. Spotify matches redirect URIs
+character for character, so no trailing slash and `https` rather than `http`. Keep
+`http://localhost:5173/callback` in the list for local development.
+
+---
+
+## Local development
+
+```bash
+npm install
+cp .env.example .env    # then fill in VITE_SPOTIFY_CLIENT_ID
+npm run dev
+```
 
 ---
 
@@ -148,10 +93,9 @@ If the smoke test returns a non-200 status the workflow still succeeds (the site
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Workflow fails at the "Check required secrets" step | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, or `VITE_SPOTIFY_CLIENT_ID` secret is missing | Add the missing secrets under **Settings → Secrets and variables → Actions** (see One-Time Setup above) |
-| Build fails with type errors | TypeScript compile error | Run `npm run type-check` locally and fix errors |
-| Cloudflare deployment step fails | Missing or invalid secrets | Re-check `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` |
-| Assets return 404 after deploy | Wrong Vite base path | Ensure the `CF_PAGES_BUILD: 'true'` env var is set in both Cloudflare workflows' build steps — this tells Vite to use base `/` instead of `/SpotRanker/` |
-| Spotify login fails on the live site | Wrong redirect URI | Ensure `VITE_SPOTIFY_REDIRECT_URI` matches the Cloudflare Pages URL and is registered in Spotify |
-| Blank page / 404 on reload | Missing `_redirects` | Confirm `public/_redirects` is present and contains `/* /index.html 200` |
-| HTTP 5xx on smoke test | Cloudflare propagation delay | Wait a few minutes and visit the URL manually |
+| Deploy fails with `Invalid _redirects configuration … Infinite loop detected` | A `_redirects` file is present again | Workers handles SPA routing through `not_found_handling`; the file must not exist |
+| Build fails with type errors | TypeScript error | Run `npm run type-check` locally and fix |
+| Site loads but Spotify login does nothing | `VITE_SPOTIFY_CLIENT_ID` not set in Cloudflare | Add it under Settings → Variables and Secrets, then redeploy |
+| Login fails with `INVALID_CLIENT` | Callback URL not registered at Spotify | Add the exact deployment URL plus `/callback` to the app's Redirect URIs |
+| 404 when reloading on `/dashboard` | `not_found_handling` missing from `wrangler.jsonc` | Restore the `assets` block shown above |
+| Changed an environment variable but nothing changed | Variables are baked in at build time | Trigger a new deployment |
