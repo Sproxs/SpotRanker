@@ -4,7 +4,6 @@ import draggable from 'vuedraggable';
 import html2canvas from 'html2canvas';
 import { useRouter } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlists';
-import { useAuthStore } from '@/stores/auth';
 import type { SpotifyTrack } from '@/types/spotify';
 import type { RankingData } from '@/types/spotify';
 import { saveRanking, loadRanking } from '@/services/offlineDb';
@@ -15,22 +14,10 @@ const props = defineProps<{ playlistId: string }>();
 
 const router = useRouter();
 const store = usePlaylistStore();
-const auth = useAuthStore();
 
-const playlistName = computed(() => {
-  const p =
-    store.library.find((pl) => pl.id === props.playlistId) ??
-    store.playlists.find((pl) => pl.id === props.playlistId);
-  return p?.name ?? 'Playlist';
-});
-
-// Whether this playlist is loaded via the authenticated account (OAuth) rather
-// than the scraper – only then does an "erneut einloggen" prompt make sense.
-const isAccountPlaylist = computed(() => {
-  const entry = store.library.find((pl) => pl.id === props.playlistId);
-  if (entry) return entry.source === 'account';
-  return auth.isAuthenticated;
-});
+const playlistName = computed(
+  () => store.library.find((pl) => pl.id === props.playlistId)?.name ?? 'Playlist',
+);
 
 // ---------------------------------------------------------------------------
 // Tier definitions & colors
@@ -365,8 +352,12 @@ onBeforeUnmount(() => {
   }
 });
 
-onMounted(() => {
-  store.loadTracks(props.playlistId);
+onMounted(async () => {
+  await store.loadTracks(props.playlistId);
+  // Album art is resolved separately and in batches, so tiles render straight
+  // away and fill in as covers arrive. Failures stay silent — the placeholder
+  // is a valid end state.
+  void store.backfillCovers(props.playlistId);
 });
 </script>
 
@@ -438,13 +429,6 @@ onMounted(() => {
       class="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400"
     >
       <p>{{ store.error }}</p>
-      <button
-        v-if="isAccountPlaylist"
-        class="mt-3 rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200"
-        @click="auth.logout(); router.replace({ name: 'home' })"
-      >
-        Erneut einloggen
-      </button>
     </div>
 
     <template v-else>

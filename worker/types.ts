@@ -23,38 +23,36 @@ export interface SpotifyTrack {
   playlistId: string;
 }
 
-/** Which scraper provider produced a response. */
-export type ProviderSource = 'apiv1' | 'profileview' | 'embed';
+/** Which scraper page produced a response. Only open.spotify.com is used. */
+export type ProviderSource = 'embed' | 'userpage';
 
 /**
- * Why the primary (v1) provider was abandoned in favour of a fallback.
- *
- * Coarse on purpose: the exact error text goes to the logs, this is what the
- * UI and support can act on. Without it, every failure class looks identical
- * from the outside (HTTP 200 + degraded: true).
+ * Coarse failure class for logging and for the message the UI shows.
+ * The exact error text goes to the logs; this is what support can act on.
  */
 export type DegradedReason =
-  | 'token' // anonymous token could not be minted or was rejected
-  | 'rate_limit' // Spotify returned 429
-  | 'forbidden' // 401/403 — token not entitled to the resource
-  | 'upstream' // 5xx or an unparseable response from Spotify
+  | 'upstream' // Spotify answered with an error or something unparseable
   | 'network'; // fetch itself failed (DNS/TLS/subrequest limit)
 
 export interface ApiPlaylistResponse {
   playlist: SpotifyPlaylist;
   tracks: SpotifyTrack[];
   source: ProviderSource;
-  /** true when the data is incomplete (e.g. embed fallback: no per-track art, ~100-track cap). */
-  degraded: boolean;
-  /** Present when degraded: which failure pushed us onto the fallback. */
-  degradedReason?: DegradedReason;
+  /**
+   * true when the embed payload carried no per-track artwork, so the client
+   * should backfill it via /api/track-covers.
+   */
+  coversMissing: boolean;
 }
 
 export interface ApiUserPlaylistsResponse {
   playlists: SpotifyPlaylist[];
   source: ProviderSource;
-  /** Present when the v1 provider failed and profile-view answered instead. */
-  degradedReason?: DegradedReason;
+}
+
+/** Response of /api/track-covers: track id → cover URL (null = none found). */
+export interface ApiTrackCoversResponse {
+  covers: Record<string, string | null>;
 }
 
 export type ApiErrorCode =

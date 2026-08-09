@@ -19,8 +19,8 @@ const ORIGIN = 'https://spotranker.example';
 const PLAYLIST_RESPONSE = {
   playlist: { id: 'p', name: 'P', description: '', imageUrl: null, trackCount: 1, owner: '' },
   tracks: [],
-  source: 'apiv1' as const,
-  degraded: false,
+  source: 'embed' as const,
+  coversMissing: false,
 };
 
 function req(path: string, method = 'GET'): Request {
@@ -85,38 +85,6 @@ describe('/api/playlist/{id}', () => {
     expect(getPlaylistMock).toHaveBeenCalledWith('abc def');
   });
 
-  it('a degraded result is cached only briefly, and carries its reason', async () => {
-    // A degraded 200 used to be pinned at the edge for the full 900s, so a
-    // transient upstream failure kept a cover-less playlist in place long
-    // after it cleared — and a user-initiated refresh could not bust it.
-    getPlaylistMock.mockResolvedValue({
-      ...PLAYLIST_RESPONSE,
-      source: 'embed',
-      degraded: true,
-      degradedReason: 'token',
-    });
-
-    const res = await run('/api/playlist/degraded');
-    expect(res.status).toBe(200);
-    expect(res.headers.get('Cache-Control')).toBe('public, max-age=60');
-    await expect(res.json()).resolves.toMatchObject({
-      source: 'embed',
-      degraded: true,
-      degradedReason: 'token',
-    });
-  });
-
-  it('a degraded user-playlists result also gets the short TTL', async () => {
-    getUserPlaylistsMock.mockResolvedValue({
-      playlists: [],
-      source: 'profileview',
-      degradedReason: 'rate_limit',
-    });
-
-    const res = await run('/api/user/u/playlists');
-    expect(res.headers.get('Cache-Control')).toBe('public, max-age=60');
-  });
-
   it('NotFoundError → 404 envelope with German message', async () => {
     const { NotFoundError } = await import('../../worker/providers');
     getPlaylistMock.mockRejectedValue(new NotFoundError('gone'));
@@ -173,9 +141,36 @@ describe('/api/playlist/{id}', () => {
   });
 });
 
+describe('/api/track-covers', () => {
+  it('missing ids → 400', async () => {
+    const res = await run('/api/track-covers');
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'bad_request' });
+  });
+
+  it('too many ids → 400 rather than a silent truncation', async () => {
+    const ids = Array.from({ length: 50 }, (_, i) => `t${i}`).join(',');
+    const res = await run(`/api/track-covers?ids=${ids}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('success: covers map, cached far longer than playlists', async () => {
+    const covers = await import('../../worker/providers/covers');
+    const spy = vi.spyOn(covers, 'fetchTrackCovers').mockResolvedValue({ a: 'https://i.scdn.co/a' });
+
+    const res = await run('/api/track-covers?ids=a');
+    expect(res.status).toBe(200);
+    // Album art is immutable, so it is worth caching for far longer than the
+    // playlist payload that referenced it.
+    expect(res.headers.get('Cache-Control')).toBe('public, max-age=2592000');
+    await expect(res.json()).resolves.toEqual({ covers: { a: 'https://i.scdn.co/a' } });
+    spy.mockRestore();
+  });
+});
+
 describe('/api/user/{userId}/playlists', () => {
   it('success: 200, cacheable, decoded userId passed through', async () => {
-    const payload = { playlists: [], source: 'apiv1' as const };
+    const payload = { playlists: [], source: 'userpage' as const };
     getUserPlaylistsMock.mockResolvedValue(payload);
 
     const res = await run('/api/user/some%20user/playlists');

@@ -19,39 +19,12 @@ export interface SpotifyTrack {
 }
 
 /**
- * Where a playlist's data comes from:
- * - `scraped`  – fetched via the built-in scraper backend (/api/*), no login.
- * - `account`  – fetched via the user's authenticated Spotify account (OAuth).
- */
-export type PlaylistSource = 'scraped' | 'account';
-
-/**
- * Why the scraper had to fall back to a degraded provider.
- * KEEP IN SYNC with worker/types.ts.
- */
-export type DegradedReason = 'token' | 'rate_limit' | 'forbidden' | 'upstream' | 'network';
-
-/** User-facing explanation per degraded reason. */
-export const DEGRADED_REASON_TEXT: Record<DegradedReason, string> = {
-  token: 'Spotify-Zugang konnte nicht hergestellt werden',
-  rate_limit: 'Spotify hat die Anfragen vorübergehend gedrosselt',
-  forbidden: 'Spotify hat den Zugriff auf diese Playlist verweigert',
-  upstream: 'Spotify hat unerwartet geantwortet',
-  network: 'Spotify war nicht erreichbar',
-};
-
-/**
- * A playlist the user has added to their local library (scraper-first flow).
- * Persisted in IndexedDB so the library survives reloads without a login.
+ * A playlist the user has added to their local library.
+ * Persisted in IndexedDB so the library survives reloads — there is no login.
  */
 export interface LibraryPlaylist extends SpotifyPlaylist {
-  source: PlaylistSource;
   /** Epoch ms when the entry was added – used for newest-first ordering. */
   addedAt: number;
-  /** true when the data is incomplete (e.g. scraper embed fallback). */
-  degraded?: boolean;
-  /** Why the data is incomplete – set alongside `degraded`. */
-  degradedReason?: DegradedReason;
 }
 
 /** Ranking data – maps tier keys to arrays of track IDs. */

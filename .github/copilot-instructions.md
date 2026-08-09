@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-SpotRanker is a **Progressive Web App (PWA)** that lets users create Spotify tier lists (S/A/B/C/D rankings) from their playlists, with full offline support. It authenticates directly with Spotify using **OAuth 2.0 with PKCE** — no backend server required.
+SpotRanker is a **Progressive Web App (PWA)** that turns any public Spotify playlist into a tier list (S/A/B/C/D), with full offline support. There is no login: a Cloudflare Worker (`worker/`) scrapes the public pages on `open.spotify.com` and serves them under `/api/*`.
 
-Key features: Spotify OAuth PKCE login, playlist browsing, drag-and-drop tier editor, 30-second audio previews, IndexedDB offline persistence, PNG image export, Web Share API, and installable PWA.
+Key features: paste-a-link playlist import, a local playlist library, drag-and-drop tier editor, IndexedDB offline persistence, PNG image export, Web Share API, and installable PWA.
 
 ---
 
@@ -31,19 +31,14 @@ Key features: Spotify OAuth PKCE login, playlist browsing, drag-and-drop tier ed
 src/
 ├── assets/main.css          # Tailwind base imports + root styles
 ├── components/ui/           # Reusable UI components (AppNavbar, BaseButton, BaseSpinner, SkeletonCard, etc.)
-├── config/spotify.ts        # Spotify OAuth config (client ID, redirect URI, scopes)
 ├── router/index.ts          # Vue Router routes with requiresAuth meta guards
 ├── stores/
-│   ├── auth.ts              # OAuth 2.0 PKCE flow, token management, auto-refresh
 │   └── playlists.ts         # Playlist/track loading with offline-first caching
 ├── services/
-│   ├── spotifyApi.ts        # Authenticated Spotify API client with pagination
 │   └── offlineDb.ts         # IndexedDB wrapper (playlists, tracks, rankings)
 ├── types/spotify.ts         # Shared TypeScript interfaces (SpotifyPlaylist, SpotifyTrack, RankingData)
-├── utils/pkce.ts            # PKCE utilities (code verifier, challenge, CSRF state)
 └── views/
     ├── HomeView.vue         # Landing page
-    ├── CallbackView.vue     # OAuth callback handler
     ├── DashboardView.vue    # Playlist browser
     └── EditorView.vue       # Drag-and-drop tier editor (main UI)
 ```
@@ -91,13 +86,6 @@ src/
 
 ### Auth Store (`src/stores/auth.ts`)
 
-Manages the full OAuth 2.0 PKCE flow:
-- `login()` — generates PKCE verifier/challenge, redirects to Spotify
-- `handleCallback()` — exchanges auth code for tokens, validates CSRF state
-- `getAccessToken()` — auto-refresh wrapper (refreshes 5 min before expiry)
-- `logout()` — clears all tokens from state and localStorage
-- Token refresh is deduplicated (single in-flight refresh at a time)
-- Tokens are persisted in `localStorage` with keys `sp_access_token`, `sp_refresh_token`, `sp_expires_at`
 
 ### Playlist Store (`src/stores/playlists.ts`)
 
@@ -110,7 +98,6 @@ Manages playlist and track data with offline-first approach:
 
 ## Services
 
-### Spotify API Client (`src/services/spotifyApi.ts`)
 
 - `apiFetch<T>(endpoint)` — authenticated fetch; handles 401 auto-refresh, 403 scope errors
 - `fetchUserPlaylists()` — paginated (50 per page), maps raw responses to `SpotifyPlaylist`
@@ -135,7 +122,6 @@ Routes are defined in `src/router/index.ts`:
 | Path | View | Auth Required |
 |---|---|---|
 | `/` | HomeView | No |
-| `/callback` | CallbackView | No |
 | `/dashboard` | DashboardView | Yes |
 | `/editor/:playlistId` | EditorView | Yes |
 
@@ -153,21 +139,20 @@ npm run type-check   # vue-tsc --noEmit only
 npm run preview      # Preview production build locally
 ```
 
-There is currently **no test infrastructure**. When adding tests in the future, use Vitest (consistent with the Vite ecosystem).
+Tests run on **Vitest** (`npm test`); see `docs/TESTING.md`. Tests live in the top-level `tests/` directory, deliberately outside every tsconfig include so `vue-tsc -b` never sweeps them into the production build.
 
 ---
 
 ## Deployment
 
-- **GitHub Pages**: `/.github/workflows/deploy.yml` — sets `VITE_SPOTIFY_CLIENT_ID` and `VITE_SPOTIFY_REDIRECT_URI` from repository secrets; Vite sets base path from `GITHUB_REPOSITORY`.
-- **Cloudflare Pages**: `/.github/workflows/cloudflare-pages.yml` — sets `CF_PAGES_BUILD=true` so Vite uses base `'/'` instead of the GitHub Pages subpath.
-- **Environment variables**: `VITE_SPOTIFY_CLIENT_ID` and `VITE_SPOTIFY_REDIRECT_URI` must be set at build time; never commit secrets.
+- **Cloudflare**: deployed as a Worker with static assets via Cloudflare's GitHub integration on push to `main`; there is no deployment workflow in GitHub Actions. See `CLOUDFLARE_DEPLOYMENT.md`.
+- **Environment variables**: none. The app uses no Spotify Web API and needs no credentials.
 
 ---
 
 ## Important Patterns & Constraints
 
-- **No backend**: The app is a pure SPA. All Spotify auth uses PKCE (no client secret needed).
+- **No Spotify Web API**: playlist data comes exclusively from the public pages on `open.spotify.com`, scraped by the Cloudflare Worker in `worker/`. There is no login, no OAuth and no token minting — do not reintroduce `api.spotify.com`.
 - **Offline-first**: Always check IndexedDB before making network requests.
 - **Spotify CDN images**: Use `crossorigin="anonymous"` on all `<img>` tags referencing `i.scdn.co` or `mosaic.scdn.co` for Workbox/SW cache compatibility.
 - **Debounced saves**: Ranking updates are debounced (500ms) before writing to IndexedDB.

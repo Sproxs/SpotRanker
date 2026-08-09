@@ -5,16 +5,16 @@
 // Only /api/* reaches this Worker (wrangler.jsonc `run_worker_first`); every
 // other path is served by the static-asset handler with SPA fallback.
 
-import type { ApiError } from './types';
+import type { ApiError, ApiTrackCoversResponse } from './types';
 import { getPlaylist, getUserPlaylists, NotFoundError } from './providers';
+import { fetchTrackCovers, MAX_IDS } from './providers/covers';
 import { cached } from './cache';
 
-// Edge cache TTL for complete scrapes (seconds).
+// Edge cache TTL for scraped playlists/profiles (seconds).
 const CACHE_TTL = 900;
-// Degraded results are cached only briefly: long enough to absorb a burst of
-// requests, short enough that a transient upstream failure does not pin a
-// cover-less playlist in place for a quarter of an hour.
-const DEGRADED_CACHE_TTL = 60;
+// Album art never changes, so cover lookups are cached far longer — that is
+// what keeps the per-request oEmbed cost from repeating for every visitor.
+const COVERS_CACHE_TTL = 60 * 60 * 24 * 30;
 
 function json(body: unknown, status = 200, cacheTtl = 0): Response {
   const headers: Record<string, string> = {
@@ -61,8 +61,7 @@ export default {
       const id = decodeURIComponent(playlistMatch[1]);
       try {
         return await cached(request.url, ctx, async () => {
-          const result = await getPlaylist(id);
-          return json(result, 200, result.degraded ? DEGRADED_CACHE_TTL : CACHE_TTL);
+          return json(await getPlaylist(id), 200, CACHE_TTL);
         });
       } catch (e) {
         return errorResponse(e);
@@ -74,8 +73,31 @@ export default {
       const userId = decodeURIComponent(userMatch[1]);
       try {
         return await cached(request.url, ctx, async () => {
-          const result = await getUserPlaylists(userId);
-          return json(result, 200, result.degradedReason ? DEGRADED_CACHE_TTL : CACHE_TTL);
+          return json(await getUserPlaylists(userId), 200, CACHE_TTL);
+        });
+      } catch (e) {
+        return errorResponse(e);
+      }
+    }
+
+    // Per-track album art. The client asks in small batches because each id
+    // costs one oEmbed subrequest; see worker/providers/covers.ts.
+    if (pathname === '/api/track-covers') {
+      const raw = new URL(request.url).searchParams.get('ids') ?? '';
+      const ids = raw.split(',').map((s) => s.trim()).filter(Boolean);
+      if (ids.length === 0) {
+        return json({ error: 'bad_request', message: 'ids fehlt' } satisfies ApiError, 400);
+      }
+      if (ids.length > MAX_IDS) {
+        return json(
+          { error: 'bad_request', message: `höchstens ${MAX_IDS} ids pro Anfrage` } satisfies ApiError,
+          400,
+        );
+      }
+      try {
+        return await cached(request.url, ctx, async () => {
+          const covers = await fetchTrackCovers(ids);
+          return json({ covers } satisfies ApiTrackCoversResponse, 200, COVERS_CACHE_TTL);
         });
       } catch (e) {
         return errorResponse(e);

@@ -25,14 +25,13 @@
 
 ## About
 
-**SpotRanker** turns any public Spotify playlist into a classic S / A / B / C / D tier list — just paste a playlist (or profile) link, **no Spotify login required**. Data is fetched by a built-in scraper backend running as a Cloudflare Worker under `/api/*`, so there are no API credentials or premium account to manage. Signing in with Spotify is still optional and unlocks ranking your own **private** playlists. Rankings are saved locally in your browser (IndexedDB), so you can close the tab and pick up right where you left off — even offline after the first load.
+**SpotRanker** turns any public Spotify playlist into a classic S / A / B / C / D tier list — just paste a playlist (or profile) link. There is **no login, no account and no API key**: a built-in scraper backend running as a Cloudflare Worker under `/api/*` reads the public pages on `open.spotify.com` directly. Rankings are saved locally in your browser (IndexedDB), so you can close the tab and pick up right where you left off — even offline after the first load.
 
 ---
 
 ## Features
 
 - 🔗 **No login needed** — paste a public playlist or profile link; a built-in scraper (Cloudflare Worker) fetches the data
-- 🔐 **Optional Spotify OAuth 2.0 (PKCE)** — sign in only to rank your own private playlists
 - 🎵 **Local library** — added playlists persist across reloads
 - 🖱️ **Drag & Drop** — move tracks between tiers with smooth animations
 - 💾 **Offline persistence** — rankings stored in IndexedDB via localForage
@@ -63,7 +62,9 @@
 
 - **Node.js** 18 or later
 - **npm** 9 or later
-- A [Spotify Developer](https://developer.spotify.com/dashboard) application with the redirect URI configured
+
+No Spotify account, developer application or API credentials are required — the
+app reads public playlists straight from `open.spotify.com`.
 
 ---
 
@@ -82,24 +83,7 @@ cd SpotRanker
 npm install
 ```
 
-### 3. Configure environment variables
-
-Copy the example file and fill in your Spotify app credentials:
-
-```bash
-cp .env.example .env
-```
-
-Open `.env` and set the following variables:
-
-```env
-VITE_SPOTIFY_CLIENT_ID=your_client_id_here
-VITE_SPOTIFY_REDIRECT_URI=http://localhost:5173/callback
-```
-
-You can obtain a Client ID from the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard). Make sure `http://localhost:5173/callback` is added to the **Redirect URIs** of your app.
-
-### 4. Start the development server
+### 3. Start the development server
 
 The frontend and the scraper Worker run as two processes. In one terminal:
 
@@ -114,9 +98,9 @@ npm run dev:worker   # wrangler dev on http://localhost:8787 (serves /api/*)
 ```
 
 Vite proxies `/api` to the Worker, so the app works end-to-end at `http://localhost:5173`.
-The `.env` step above is only needed for the optional Spotify login — the scraper needs no credentials.
+There is nothing to configure — the scraper needs no credentials.
 
-### 5. Run the tests
+### 4. Run the tests
 
 ```bash
 npm test             # Vitest unit suite (Spotify fully mocked, runs offline)
@@ -125,7 +109,7 @@ npm test             # Vitest unit suite (Spotify fully mocked, runs offline)
 Live smoke tests against real Spotify and the manual E2E checklist are described in
 [docs/TESTING.md](docs/TESTING.md).
 
-### 6. Build for production
+### 5. Build for production
 
 ```bash
 npm run build
@@ -145,7 +129,6 @@ this repository — see [CLOUDFLARE_DEPLOYMENT.md](CLOUDFLARE_DEPLOYMENT.md).
 3. Drag tracks from the **Unranked Pool** at the bottom into the S / A / B / C / D rows.
 4. Your ranking is saved automatically — navigate away and come back anytime.
 5. Use **Save as Image** to download a PNG of your tier list, or **Share** to send it directly.
-6. *(Optional)* Click **Login with Spotify** to also rank your own **private** playlists.
 
 ---
 

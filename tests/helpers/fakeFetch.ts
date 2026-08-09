@@ -61,30 +61,3 @@ export function htmlResponse(body: string, status = 200): Response {
   return new Response(body, { status, headers: { 'content-type': 'text/html' } });
 }
 
-/**
- * Routes that satisfy the token-minting pipeline offline: secrets refresh
- * fails (bundled fallback kicks in), server-time HEAD succeeds, and the token
- * endpoint returns a long-lived token. Spread these AFTER your specific routes.
- */
-export function tokenPipelineRoutes(accessToken = 'test-token'): FetchRoute[] {
-  return [
-    {
-      match: (url) => url.includes('raw.githubusercontent.com'),
-      respond: () => new Response('not found', { status: 404 }),
-    },
-    {
-      match: (url, init) => url === 'https://open.spotify.com/' && init?.method === 'HEAD',
-      respond: () =>
-        new Response(null, { status: 200, headers: { date: new Date().toUTCString() } }),
-    },
-    {
-      match: (url) => url.startsWith('https://open.spotify.com/api/token'),
-      respond: () =>
-        jsonResponse({
-          accessToken,
-          accessTokenExpirationTimestampMs: Date.now() + 60 * 60 * 1000,
-          isAnonymous: true,
-        }),
-    },
-  ];
-}

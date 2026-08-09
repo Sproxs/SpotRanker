@@ -2,15 +2,11 @@
 import { onMounted, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlists';
-import { useAuthStore } from '@/stores/auth';
-import type { LibraryPlaylist, SpotifyPlaylist } from '@/types/spotify';
-import { DEGRADED_REASON_TEXT } from '@/types/spotify';
-import SkeletonCard from '@/components/ui/SkeletonCard.vue';
+import type { SpotifyPlaylist } from '@/types/spotify';
 
 const router = useRouter();
 const route = useRoute();
 const store = usePlaylistStore();
-const auth = useAuthStore();
 
 const addInput = ref('');
 
@@ -31,13 +27,6 @@ async function addFromProfile(playlist: SpotifyPlaylist) {
   await store.addScrapedPlaylist(playlist);
 }
 
-/** Badge tooltip: name the actual cause when the backend reported one. */
-function degradedTitle(playlist: LibraryPlaylist): string {
-  const base = 'Eingeschränkte Daten (ohne Album-Cover, evtl. gekürzt)';
-  const reason = playlist.degradedReason;
-  return reason ? `${base} – ${DEGRADED_REASON_TEXT[reason]}` : base;
-}
-
 onMounted(async () => {
   await store.initLibrary();
 
@@ -47,11 +36,6 @@ onMounted(async () => {
     addInput.value = add.trim();
     await handleAdd();
     router.replace({ name: 'dashboard' });
-  }
-
-  // Signed-in users also see their own Spotify playlists.
-  if (auth.isAuthenticated) {
-    store.loadUserPlaylists();
   }
 });
 </script>
@@ -129,7 +113,7 @@ onMounted(async () => {
     </div>
 
     <!-- Search -->
-    <div v-if="store.library.length > 0 || store.playlists.length > 0">
+    <div v-if="store.library.length > 0">
       <input
         v-model="store.searchQuery"
         type="text"
@@ -187,13 +171,6 @@ onMounted(async () => {
             >
               Offline
             </span>
-            <span
-              v-if="playlist.degraded"
-              class="absolute bottom-2 left-2 rounded-full bg-amber-400/90 px-2 py-0.5 text-[10px] font-bold text-black"
-              :title="degradedTitle(playlist)"
-            >
-              Eingeschränkt
-            </span>
           </div>
 
           <!-- Info -->
@@ -202,64 +179,6 @@ onMounted(async () => {
           </h2>
           <p class="truncate text-xs text-zinc-400">
             {{ playlist.owner || 'Unbekannt' }}<template v-if="playlist.trackCount"> · {{ playlist.trackCount }} Songs</template>
-          </p>
-        </article>
-      </div>
-    </div>
-
-    <!-- Signed-in: the user's own Spotify playlists -->
-    <div v-if="auth.isAuthenticated" class="space-y-3 border-t border-zinc-800 pt-8">
-      <h2 class="text-lg font-bold text-white">Meine Playlists</h2>
-
-      <div v-if="store.isLoadingPlaylists" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <SkeletonCard v-for="n in 3" :key="n" />
-      </div>
-
-      <div
-        v-else-if="store.error"
-        class="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400"
-      >
-        {{ store.error }}
-      </div>
-
-      <div
-        v-else-if="store.filteredPlaylists.length === 0"
-        class="py-8 text-center text-zinc-400"
-      >
-        Keine eigenen Playlists gefunden.
-      </div>
-
-      <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <article
-          v-for="playlist in store.filteredPlaylists"
-          :key="playlist.id"
-          class="group cursor-pointer rounded-xl border border-zinc-800 bg-zinc-900/70 p-4 transition hover:border-spotify-400/50 hover:bg-zinc-800/80"
-          @click="openEditor(playlist.id)"
-        >
-          <div class="relative aspect-square w-full overflow-hidden rounded-lg bg-zinc-800">
-            <img
-              v-if="playlist.imageUrl"
-              :src="playlist.imageUrl"
-              :alt="playlist.name"
-              crossorigin="anonymous"
-              class="h-full w-full object-cover"
-              loading="lazy"
-            />
-            <div v-else class="flex h-full items-center justify-center text-4xl text-zinc-600">🎵</div>
-
-            <span
-              v-if="store.cachedPlaylistIds.has(playlist.id)"
-              class="absolute bottom-2 right-2 rounded-full bg-spotify-400/90 px-2 py-0.5 text-[10px] font-bold text-black"
-            >
-              Offline
-            </span>
-          </div>
-
-          <h3 class="mt-3 truncate text-sm font-semibold text-white group-hover:text-spotify-400">
-            {{ playlist.name }}
-          </h3>
-          <p class="truncate text-xs text-zinc-400">
-            {{ playlist.owner }} · {{ playlist.trackCount }} Songs
           </p>
         </article>
       </div>
