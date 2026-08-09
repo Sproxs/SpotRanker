@@ -3,7 +3,8 @@ import { onMounted, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlists';
 import { useAuthStore } from '@/stores/auth';
-import type { SpotifyPlaylist } from '@/types/spotify';
+import type { LibraryPlaylist, SpotifyPlaylist } from '@/types/spotify';
+import { DEGRADED_REASON_TEXT } from '@/types/spotify';
 import SkeletonCard from '@/components/ui/SkeletonCard.vue';
 
 const router = useRouter();
@@ -28,6 +29,13 @@ function openEditor(playlistId: string) {
 
 async function addFromProfile(playlist: SpotifyPlaylist) {
   await store.addScrapedPlaylist(playlist);
+}
+
+/** Badge tooltip: name the actual cause when the backend reported one. */
+function degradedTitle(playlist: LibraryPlaylist): string {
+  const base = 'Eingeschränkte Daten (ohne Album-Cover, evtl. gekürzt)';
+  const reason = playlist.degradedReason;
+  return reason ? `${base} – ${DEGRADED_REASON_TEXT[reason]}` : base;
 }
 
 onMounted(async () => {
@@ -182,7 +190,7 @@ onMounted(async () => {
             <span
               v-if="playlist.degraded"
               class="absolute bottom-2 left-2 rounded-full bg-amber-400/90 px-2 py-0.5 text-[10px] font-bold text-black"
-              title="Eingeschränkte Daten (ohne Album-Cover, evtl. gekürzt)"
+              :title="degradedTitle(playlist)"
             >
               Eingeschränkt
             </span>

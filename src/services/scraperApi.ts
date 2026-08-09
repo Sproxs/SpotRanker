@@ -1,4 +1,4 @@
-import type { SpotifyPlaylist, SpotifyTrack } from '@/types/spotify';
+import type { DegradedReason, SpotifyPlaylist, SpotifyTrack } from '@/types/spotify';
 
 // Client for the built-in scraper backend (Cloudflare Worker under /api/*).
 // Same origin, so a plain relative fetch works in dev (via Vite proxy) and prod.
@@ -15,11 +15,13 @@ interface ApiPlaylistResponse {
   tracks: SpotifyTrack[];
   source: 'apiv1' | 'profileview' | 'embed';
   degraded: boolean;
+  degradedReason?: DegradedReason;
 }
 
 interface ApiUserPlaylistsResponse {
   playlists: SpotifyPlaylist[];
   source: 'apiv1' | 'profileview' | 'embed';
+  degradedReason?: DegradedReason;
 }
 
 const ERROR_MESSAGES: Record<ApiError['error'], string> = {
@@ -51,11 +53,19 @@ async function apiFetch<T>(path: string): Promise<T> {
 }
 
 /** Fetch a public playlist (metadata + all tracks) via the scraper. */
-export async function fetchScrapedPlaylist(
-  playlistId: string,
-): Promise<{ playlist: SpotifyPlaylist; tracks: SpotifyTrack[]; degraded: boolean }> {
+export async function fetchScrapedPlaylist(playlistId: string): Promise<{
+  playlist: SpotifyPlaylist;
+  tracks: SpotifyTrack[];
+  degraded: boolean;
+  degradedReason?: DegradedReason;
+}> {
   const data = await apiFetch<ApiPlaylistResponse>(`/playlist/${encodeURIComponent(playlistId)}`);
-  return { playlist: data.playlist, tracks: data.tracks, degraded: data.degraded };
+  return {
+    playlist: data.playlist,
+    tracks: data.tracks,
+    degraded: data.degraded,
+    degradedReason: data.degradedReason,
+  };
 }
 
 /** Fetch the public playlists of a Spotify profile via the scraper. */

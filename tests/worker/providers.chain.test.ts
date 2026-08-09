@@ -3,7 +3,14 @@
 // short-circuit / wrapping rules, not provider internals.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getPlaylist, getUserPlaylists, NotFoundError, ScrapeError } from '../../worker/providers';
+import {
+  classifyFailure,
+  getPlaylist,
+  getUserPlaylists,
+  NotFoundError,
+  ScrapeError,
+} from '../../worker/providers';
+import { TokenError } from '../../worker/token';
 import { fetchPlaylistV1, fetchUserPlaylistsV1, ProviderError } from '../../worker/providers/apiV1';
 import { fetchPlaylistEmbed } from '../../worker/providers/embed';
 import { fetchUserPlaylistsProfileView } from '../../worker/providers/profileView';
@@ -20,6 +27,8 @@ vi.mock('../../worker/providers/apiV1', async (importOriginal) => {
 });
 vi.mock('../../worker/providers/embed', () => ({ fetchPlaylistEmbed: vi.fn() }));
 vi.mock('../../worker/providers/profileView', () => ({ fetchUserPlaylistsProfileView: vi.fn() }));
+// Cover enrichment is best-effort and has its own suite; keep it inert here.
+vi.mock('../../worker/providers/enrich', () => ({ enrichCovers: vi.fn().mockResolvedValue(0) }));
 
 const v1Playlist = vi.mocked(fetchPlaylistV1);
 const v1User = vi.mocked(fetchUserPlaylistsV1);
@@ -89,6 +98,47 @@ describe('getPlaylist chain (v1 → embed)', () => {
     const err = await getPlaylist('p').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ScrapeError);
     expect((err as Error).message).toBe('embed down');
+  });
+});
+
+describe('degradedReason classification', () => {
+  it.each([
+    ['TokenError', new TokenError('mint failed'), 'token'],
+    ['429', new ProviderError('rate limited', 429), 'rate_limit'],
+    ['401', new ProviderError('unauthorized', 401), 'forbidden'],
+    ['403', new ProviderError('forbidden', 403), 'forbidden'],
+    ['500', new ProviderError('server error', 500), 'upstream'],
+    ['unparseable body', new SyntaxError('Unexpected token <'), 'upstream'],
+    ['raw fetch rejection', new TypeError('Failed to fetch'), 'network'],
+  ])('%s → %s', async (_label, error, expected) => {
+    expect(classifyFailure(error)).toBe(expected);
+  });
+
+  it('is attached to the degraded playlist response', async () => {
+    v1Playlist.mockRejectedValue(new ProviderError('rate limited', 429));
+    embed.mockResolvedValue({ playlist: PLAYLIST, tracks: [TRACK], degraded: true });
+
+    await expect(getPlaylist('p')).resolves.toMatchObject({
+      source: 'embed',
+      degraded: true,
+      degradedReason: 'rate_limit',
+    });
+  });
+
+  it('is attached to the profile-view fallback response', async () => {
+    v1User.mockRejectedValue(new TokenError('mint failed'));
+    profileView.mockResolvedValue([PLAYLIST]);
+
+    await expect(getUserPlaylists('u')).resolves.toMatchObject({
+      source: 'profileview',
+      degradedReason: 'token',
+    });
+  });
+
+  it('a successful v1 response carries no reason', async () => {
+    v1Playlist.mockResolvedValue({ playlist: PLAYLIST, tracks: [TRACK] });
+    const result = await getPlaylist('p');
+    expect(result.degradedReason).toBeUndefined();
   });
 });
 

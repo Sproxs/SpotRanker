@@ -84,12 +84,15 @@ export const usePlaylistStore = defineStore('playlists', () => {
       const classified = classifyInput(input);
 
       if (classified.kind === 'playlist' && classified.id) {
-        const { playlist, tracks, degraded } = await fetchScrapedPlaylist(classified.id);
+        const { playlist, tracks, degraded, degradedReason } = await fetchScrapedPlaylist(
+          classified.id,
+        );
         const entry: LibraryPlaylist = {
           ...playlist,
           source: 'scraped',
           addedAt: Date.now(),
           degraded,
+          degradedReason,
         };
         library.value = await addToLibrary(entry);
         await savePlaylistTracks(entry.id, tracks);
@@ -192,13 +195,14 @@ export const usePlaylistStore = defineStore('playlists', () => {
       return fetchPlaylistTracks(playlistId);
     }
 
-    const { tracks, playlist, degraded } = await fetchScrapedPlaylist(playlistId);
+    const { tracks, playlist, degraded, degradedReason } = await fetchScrapedPlaylist(playlistId);
 
     // Refresh the library entry with the now-known count/degraded (profile-added
     // entries start with trackCount 0).
     if (entry) {
       entry.trackCount = playlist.trackCount || tracks.length;
       entry.degraded = degraded;
+      entry.degradedReason = degradedReason;
       if (!entry.name || entry.name === 'Unbenannte Playlist') entry.name = playlist.name;
       if (!entry.imageUrl) entry.imageUrl = playlist.imageUrl;
       await saveLibrary(library.value);
@@ -218,8 +222,17 @@ export const usePlaylistStore = defineStore('playlists', () => {
     isLoadingTracks.value = true;
     error.value = null;
 
+    // Cached tracks from a degraded fetch (embed fallback: no album covers,
+    // list truncated) are worth one re-attempt per open. Nothing else ever
+    // invalidates the IndexedDB copy, so without this the placeholder tiles
+    // would stay forever even after the upstream cause cleared.
+    const entry = library.value.find((p) => p.id === playlistId);
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    const retryDegraded = entry?.degraded === true && online;
+    const mayFallBackToCache = options?.forceRefresh === true || retryDegraded;
+
     try {
-      if (!options?.forceRefresh) {
+      if (!options?.forceRefresh && !retryDegraded) {
         const cached = await loadPlaylistTracks(playlistId);
         if (cached && cached.length > 0) {
           currentTracks.value = cached;
@@ -234,7 +247,7 @@ export const usePlaylistStore = defineStore('playlists', () => {
       cachedPlaylistIds.value = await getCachedPlaylistIds();
       return 'network';
     } catch (e) {
-      if (options?.forceRefresh) {
+      if (mayFallBackToCache) {
         const cached = await loadPlaylistTracks(playlistId);
         if (cached && cached.length > 0) {
           currentTracks.value = cached;

@@ -9,14 +9,18 @@ import type { ApiError } from './types';
 import { getPlaylist, getUserPlaylists, NotFoundError } from './providers';
 import { cached } from './cache';
 
-// Edge cache TTL for successful scrapes (seconds).
+// Edge cache TTL for complete scrapes (seconds).
 const CACHE_TTL = 900;
+// Degraded results are cached only briefly: long enough to absorb a burst of
+// requests, short enough that a transient upstream failure does not pin a
+// cover-less playlist in place for a quarter of an hour.
+const DEGRADED_CACHE_TTL = 60;
 
-function json(body: unknown, status = 200, cacheable = false): Response {
+function json(body: unknown, status = 200, cacheTtl = 0): Response {
   const headers: Record<string, string> = {
     'content-type': 'application/json; charset=utf-8',
   };
-  if (cacheable) headers['Cache-Control'] = `public, max-age=${CACHE_TTL}`;
+  if (cacheTtl > 0) headers['Cache-Control'] = `public, max-age=${cacheTtl}`;
   return new Response(JSON.stringify(body), { status, headers });
 }
 
@@ -56,7 +60,10 @@ export default {
     if (playlistMatch) {
       const id = decodeURIComponent(playlistMatch[1]);
       try {
-        return await cached(request.url, ctx, async () => json(await getPlaylist(id), 200, true));
+        return await cached(request.url, ctx, async () => {
+          const result = await getPlaylist(id);
+          return json(result, 200, result.degraded ? DEGRADED_CACHE_TTL : CACHE_TTL);
+        });
       } catch (e) {
         return errorResponse(e);
       }
@@ -66,9 +73,10 @@ export default {
     if (userMatch) {
       const userId = decodeURIComponent(userMatch[1]);
       try {
-        return await cached(request.url, ctx, async () =>
-          json(await getUserPlaylists(userId), 200, true),
-        );
+        return await cached(request.url, ctx, async () => {
+          const result = await getUserPlaylists(userId);
+          return json(result, 200, result.degradedReason ? DEGRADED_CACHE_TTL : CACHE_TTL);
+        });
       } catch (e) {
         return errorResponse(e);
       }

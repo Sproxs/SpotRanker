@@ -15,11 +15,23 @@ interface RawAlbum {
   name?: string;
   images?: RawImage[];
 }
-interface RawTrack {
+export interface RawTrack {
   id?: string | null;
   name?: string;
   artists?: RawArtist[];
   album?: RawAlbum;
+}
+
+/**
+ * Album name + primary cover URL from a raw v1 track. Shared by the playlist
+ * mapper and the cover enricher so both agree on which image wins.
+ */
+export function albumInfo(track: RawTrack): { albumName: string; albumCoverUrl: string | null } {
+  const images = track.album?.images ?? [];
+  return {
+    albumName: track.album?.name ?? '',
+    albumCoverUrl: images.length > 0 ? images[0].url : null,
+  };
 }
 
 export interface RawV1Playlist {
@@ -52,14 +64,14 @@ export function mapV1Track(item: RawV1PlaylistItem, playlistId: string): Spotify
   if (!track || !track.id) return null; // skip local-only / unavailable tracks
 
   const artists = track.artists ?? [];
-  const images = track.album?.images ?? [];
+  const { albumName, albumCoverUrl } = albumInfo(track);
 
   return {
     id: track.id,
     name: track.name ?? 'Unbekannter Titel',
     artist: artists.map((a) => a.name).join(', ') || 'Unbekannter Künstler',
-    albumName: track.album?.name ?? '',
-    albumCoverUrl: images.length > 0 ? images[0].url : null,
+    albumName,
+    albumCoverUrl,
     playlistId,
   };
 }

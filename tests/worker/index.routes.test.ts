@@ -85,6 +85,38 @@ describe('/api/playlist/{id}', () => {
     expect(getPlaylistMock).toHaveBeenCalledWith('abc def');
   });
 
+  it('a degraded result is cached only briefly, and carries its reason', async () => {
+    // A degraded 200 used to be pinned at the edge for the full 900s, so a
+    // transient upstream failure kept a cover-less playlist in place long
+    // after it cleared — and a user-initiated refresh could not bust it.
+    getPlaylistMock.mockResolvedValue({
+      ...PLAYLIST_RESPONSE,
+      source: 'embed',
+      degraded: true,
+      degradedReason: 'token',
+    });
+
+    const res = await run('/api/playlist/degraded');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('public, max-age=60');
+    await expect(res.json()).resolves.toMatchObject({
+      source: 'embed',
+      degraded: true,
+      degradedReason: 'token',
+    });
+  });
+
+  it('a degraded user-playlists result also gets the short TTL', async () => {
+    getUserPlaylistsMock.mockResolvedValue({
+      playlists: [],
+      source: 'profileview',
+      degradedReason: 'rate_limit',
+    });
+
+    const res = await run('/api/user/u/playlists');
+    expect(res.headers.get('Cache-Control')).toBe('public, max-age=60');
+  });
+
   it('NotFoundError → 404 envelope with German message', async () => {
     const { NotFoundError } = await import('../../worker/providers');
     getPlaylistMock.mockRejectedValue(new NotFoundError('gone'));

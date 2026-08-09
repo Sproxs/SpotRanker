@@ -43,8 +43,18 @@ async function fetchServerTimeSeconds(): Promise<number> {
       const ms = Date.parse(dateHeader);
       if (Number.isFinite(ms)) return Math.floor(ms / 1000);
     }
-  } catch {
-    // fall through to local time
+    console.warn(
+      JSON.stringify({ evt: 'server_time_fallback', status: res.status, reason: 'no date header' }),
+    );
+  } catch (e) {
+    // Worth logging: if open.spotify.com is unreachable from this egress IP,
+    // this is the first (otherwise silent) symptom and token minting will fail next.
+    console.warn(
+      JSON.stringify({
+        evt: 'server_time_fallback',
+        reason: e instanceof Error ? e.message : String(e),
+      }),
+    );
   }
   return Math.floor(Date.now() / 1000);
 }
@@ -70,7 +80,20 @@ async function requestToken(
       'App-Platform': 'WebPlayer',
     },
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    // The prime suspect when playlists silently degrade: a non-ok here is
+    // indistinguishable from a malformed body upstream, so surface it.
+    let body = '';
+    try {
+      body = (await res.text()).trim().slice(0, 200);
+    } catch {
+      // body unreadable — status alone still tells us most of the story
+    }
+    console.error(
+      JSON.stringify({ evt: 'token_mint_rejected', status: res.status, version, reason, body }),
+    );
+    return null;
+  }
   return (await res.json()) as TokenResponse;
 }
 

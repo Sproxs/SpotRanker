@@ -1,19 +1,22 @@
 // TOTP secret provider for the anonymous web-player token flow.
 //
-// Spotify rotates the web-player TOTP secret periodically. The community keeps a
-// running list; we try to refresh from it at runtime but always ship a bundled
-// fallback so token minting keeps working when the remote list is unreachable or
-// its path/shape changed.
+// Spotify rotates the web-player TOTP secret periodically. This module used to
+// refresh the secret from a community-maintained list at runtime, but that
+// source (Thereallo1026/spotify-secrets) no longer exists — all of its known
+// paths return 404 — so every request burned three subrequests to learn nothing.
+// The secret is now bundled outright, which is also what comparable projects
+// settled on. See REMOTE_URLS below for how to re-enable a remote refresh.
 
 export interface SpotifySecret {
   version: number;
   cipher: number[];
 }
 
-// Current web-player secret (version 61, first observed January 2026). This is
-// used as-is when every REMOTE_URL below fails. If Spotify rotates the secret
-// and token minting starts failing, refresh this array + version (extract from
-// the open.spotify.com web-player bundle) or fix REMOTE_URLS.
+// Current web-player secret (version 61, first observed January 2026 and still
+// the version the web player selects). If Spotify rotates the secret and token
+// minting starts failing — watch for `token_mint_rejected` in the logs — refresh
+// this array + version by extracting them from the open.spotify.com web-player
+// bundle, or point REMOTE_URLS at a maintained list.
 const FALLBACK_SECRETS: SpotifySecret[] = [
   {
     version: 61,
@@ -24,18 +27,17 @@ const FALLBACK_SECRETS: SpotifySecret[] = [
   },
 ];
 
-// Community-maintained rotating secret list. The exact path has moved across
-// releases, so we try several known locations; the first that parses wins,
-// otherwise FALLBACK_SECRETS is used. Expected shape: { "<version>": [int, …], … }.
-const REMOTE_URLS = [
-  'https://raw.githubusercontent.com/Thereallo1026/spotify-secrets/main/secrets/secretDict.json',
-  'https://raw.githubusercontent.com/Thereallo1026/spotify-secrets/main/secretDict.json',
-  'https://raw.githubusercontent.com/Thereallo1026/spotify-secrets/main/secrets/secrets.json',
-];
+// Optional remote refresh sources, tried in order; the first that parses wins
+// and is merged over FALLBACK_SECRETS. Expected shape: { "<version>": [int, …], … }.
+// Deliberately empty: the previous source is gone (404 on every path), and an
+// unreachable list costs a subrequest per entry on every cold isolate while
+// silently changing nothing. Add a maintained URL here to re-enable refreshing.
+const REMOTE_URLS: string[] = [];
 
 let cached: SpotifySecret[] | null = null;
 
-function parseSecretDict(json: unknown): SpotifySecret[] {
+/** Exported for tests: validates the remote dict shape. */
+export function parseSecretDict(json: unknown): SpotifySecret[] {
   if (!json || typeof json !== 'object') return [];
   const out: SpotifySecret[] = [];
   for (const [key, value] of Object.entries(json as Record<string, unknown>)) {
@@ -49,8 +51,9 @@ function parseSecretDict(json: unknown): SpotifySecret[] {
 }
 
 /**
- * Known secrets, newest version first. Attempts one remote refresh per isolate
- * and merges it over the bundled fallback (remote entries win on version clash).
+ * Known secrets, newest version first. When REMOTE_URLS is non-empty, attempts
+ * one remote refresh per isolate and merges it over the bundled fallback
+ * (remote entries win on version clash).
  */
 export async function getSecrets(): Promise<SpotifySecret[]> {
   if (cached) return cached;
@@ -67,8 +70,16 @@ export async function getSecrets(): Promise<SpotifySecret[]> {
         for (const secret of parsed) merged.set(secret.version, secret);
         break;
       }
-    } catch {
-      // Ignore and try the next URL / fall back to the bundled secret.
+    } catch (e) {
+      // Try the next URL / fall back to the bundled secret — but say so, since
+      // a silently unreachable list looks exactly like a working one.
+      console.warn(
+        JSON.stringify({
+          evt: 'secret_refresh_failed',
+          url,
+          reason: e instanceof Error ? e.message : String(e),
+        }),
+      );
     }
   }
 

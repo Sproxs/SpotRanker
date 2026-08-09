@@ -120,5 +120,6 @@ at `http://localhost:5173`. Smoke-test the Worker directly with
 | Login fails with `INVALID_CLIENT` | Callback URL not registered at Spotify | Add the exact deployment URL plus `/callback` to the app's Redirect URIs |
 | 404 when reloading on `/dashboard` | `not_found_handling` missing from `wrangler.jsonc` | Restore the `assets` block shown above |
 | `/api/*` returns `index.html` instead of JSON | `run_worker_first` missing from `wrangler.jsonc` | Restore `assets.run_worker_first: ["/api/*"]` |
-| Scraper returns 502 `scrape_failed` for every playlist | Spotify rotated the web-player TOTP secret | Refresh the cipher bytes + version in `worker/secrets.ts` (`FALLBACK_SECRETS`) |
+| Scraper returns 502 `scrape_failed` for every playlist | Spotify rotated the web-player TOTP secret, or egress is blocked | Check the logs for `token_mint_rejected`; refresh the cipher bytes + version in `worker/secrets.ts` (`FALLBACK_SECRETS`) if the secret rotated |
+| Playlists load but show the "Eingeschränkt" badge and no song covers | The v1 provider failed and the embed fallback answered — it carries no per-track artwork | Look for `provider_fallback` in the logs; its `reason` names the class. See the diagnosis table in [docs/TESTING.md](docs/TESTING.md) |
 | Changed an environment variable but nothing changed | Variables are baked in at build time | Trigger a new deployment |

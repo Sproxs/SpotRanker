@@ -31,9 +31,30 @@ describe('fetchScrapedPlaylist', () => {
       playlist: PLAYLIST_PAYLOAD.playlist,
       tracks: [],
       degraded: false,
+      degradedReason: undefined,
     });
     expect(result).not.toHaveProperty('source');
     expect(fetchMock.calls[0].url).toBe('/api/playlist/id%20with%20spaces');
+  });
+
+  it('passes degradedReason through so the UI can name the cause', async () => {
+    stubFetch([
+      {
+        match: (url) => url.includes('/api/playlist/'),
+        respond: () =>
+          jsonResponse({
+            ...PLAYLIST_PAYLOAD,
+            source: 'embed',
+            degraded: true,
+            degradedReason: 'rate_limit',
+          }),
+      },
+    ]);
+
+    await expect(fetchScrapedPlaylist('x')).resolves.toMatchObject({
+      degraded: true,
+      degradedReason: 'rate_limit',
+    });
   });
 
   it.each([

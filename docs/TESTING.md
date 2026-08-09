@@ -103,6 +103,60 @@ npm run dev            # Vite auf :5173, proxied /api → :8787
    Playlist lädt über Embed, Karte zeigt das gelbe „Eingeschränkt"-Badge.
    Änderung danach zurücknehmen.
 
+## 4. Scraper-Diagnose in Produktion
+
+Wenn Playlists mit dem Badge „Eingeschränkt" und ohne Song-Cover ankommen, ist
+der v1-Provider gescheitert und der Embed-Fallback hat übernommen. Der Embed
+liefert per Design keine Track-Cover. Die Frage ist immer: **warum** ist v1
+gescheitert?
+
+`wrangler.jsonc` hat `observability.enabled`, die Logs stehen also im
+Cloudflare-Dashboard (oder live via `npx wrangler tail`). Relevante Events:
+
+| Event | Bedeutung |
+|---|---|
+| `provider_fallback` | v1 wurde aufgegeben. `reason` ist die grobe Klasse, `message` der Originalfehler. |
+| `token_mint_rejected` | Der Token-Endpunkt hat abgelehnt — `status` + `body` enthalten Spotifys Begründung. Häufigste Ursache eines `reason: "token"`. |
+| `secret_refresh_failed` | Eine konfigurierte Remote-Secret-Quelle war nicht erreichbar (standardmäßig ist keine konfiguriert). |
+| `server_time_fallback` | `open.spotify.com` war für den HEAD nicht erreichbar — oft das erste Symptom eines Egress-Blocks. |
+| `cover_enrichment_failed` | Das Cover-Nachladen via `/v1/tracks` scheiterte; die Playlist bleibt ohne Track-Cover. |
+| `covers_enriched` | Cover wurden nachgeladen (`filled` von `of`). |
+
+Die Klassen in `reason` und was sie praktisch bedeuten:
+
+| `reason` | Ursache | Nächster Schritt |
+|---|---|---|
+| `token` | Anonymes Token nicht erhältlich oder abgelehnt | `token_mint_rejected` lesen. Ist der `body` ein Egress-/Bot-Block, hilft kein Code-Fix. Rotiertes Secret → `FALLBACK_SECRETS` in `worker/secrets.ts` aktualisieren. |
+| `rate_limit` | Spotify 429 | Meist transient; `apiGet` wartet einmal kurz (`Retry-After`, max. 2 s). |
+| `forbidden` | 401/403 | Token nicht berechtigt, oder Markt-/Playlist-Restriktion. |
+| `upstream` | 5xx oder unlesbare Antwort | Spotify-seitig; abwarten. |
+| `network` | fetch selbst fehlgeschlagen | DNS/TLS/Subrequest-Limit. |
+
+Der Grund steht zusätzlich in der API-Antwort (`degradedReason`) und im Tooltip
+des „Eingeschränkt"-Badges, ist also ohne Log-Zugriff sichtbar.
+
+**Wichtig zur Cache-Wirkung:** degradierte Antworten werden nur **60 s** am Edge
+gecacht (vollständige 900 s). Ein Reproduktionsversuch direkt nach einer
+Änderung braucht also höchstens eine Minute Wartezeit, nicht eine Viertelstunde.
+
+### Offene Verifikation: Embed-Trackliste
+
+`worker/providers/embed.ts` liest pro Track nur `uri`/`title`/`subtitle`. Ob
+Spotify im `__NEXT_DATA__` doch Artwork pro Track mitliefert, ist **unbestätigt**
+— das Fixture wurde aus dem Parser abgeleitet, nicht aus einer echten Antwort.
+Prüfen (braucht freien Zugang zu `open.spotify.com`):
+
+```bash
+curl -sL -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' \
+  'https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M' \
+| sed -n 's/.*<script id="__NEXT_DATA__"[^>]*>\(.*\)<\/script>.*/\1/p' \
+| jq '.props.pageProps.state.data.entity.trackList[0]'
+```
+
+Enthält die Ausgabe ein Bildfeld, ist das ein reiner Parser-Fix ohne Token und
+ohne Zusatz-Requests — deutlich besser als das aktuelle Nachladen via
+`/v1/tracks`, das am selben Token hängt, der im Fehlerfall gerade versagt hat.
+
 ## Known Hazards
 
 Tests mit Präfix `KNOWN HAZARD:` asserten das **Ist**-Verhalten. Beim Fix
