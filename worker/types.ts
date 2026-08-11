@@ -23,20 +23,36 @@ export interface SpotifyTrack {
   playlistId: string;
 }
 
-/** Which scraper provider produced a response. */
-export type ProviderSource = 'apiv1' | 'profileview' | 'embed';
+/** Which scraper page produced a response. Only open.spotify.com is used. */
+export type ProviderSource = 'embed' | 'userpage';
+
+/**
+ * Coarse failure class for logging and for the message the UI shows.
+ * The exact error text goes to the logs; this is what support can act on.
+ */
+export type DegradedReason =
+  | 'upstream' // Spotify answered with an error or something unparseable
+  | 'network'; // fetch itself failed (DNS/TLS/subrequest limit)
 
 export interface ApiPlaylistResponse {
   playlist: SpotifyPlaylist;
   tracks: SpotifyTrack[];
   source: ProviderSource;
-  /** true when the data is incomplete (e.g. embed fallback: no per-track art, ~100-track cap). */
-  degraded: boolean;
+  /**
+   * true when the embed payload carried no per-track artwork, so the client
+   * should backfill it via /api/track-covers.
+   */
+  coversMissing: boolean;
 }
 
 export interface ApiUserPlaylistsResponse {
   playlists: SpotifyPlaylist[];
   source: ProviderSource;
+}
+
+/** Response of /api/track-covers: track id → cover URL (null = none found). */
+export interface ApiTrackCoversResponse {
+  covers: Record<string, string | null>;
 }
 
 export type ApiErrorCode =

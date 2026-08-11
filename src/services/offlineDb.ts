@@ -8,7 +8,7 @@ import type { SpotifyPlaylist, SpotifyTrack, RankingData, LibraryPlaylist } from
 const playlistStore = localforage.createInstance({
   name: 'spotranker',
   storeName: 'playlists',
-  description: 'Cached user playlists',
+  description: 'The local playlist library',
 });
 
 const trackStore = localforage.createInstance({
@@ -24,34 +24,7 @@ const rankingStore = localforage.createInstance({
 });
 
 // ---------------------------------------------------------------------------
-// Playlist helpers
-// ---------------------------------------------------------------------------
-
-/** Persist the full array of playlists. */
-export async function savePlaylists(playlists: SpotifyPlaylist[]): Promise<void> {
-  try {
-    await playlistStore.setItem('userPlaylists', playlists);
-  } catch (err) {
-    console.error('[offlineDb] Playlists konnten nicht gespeichert werden:', err);
-    throw new Error(`Playlists konnten nicht im lokalen Speicher gespeichert werden: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-/** Load playlists from IndexedDB (returns empty array if none cached). */
-export async function loadPlaylists(): Promise<SpotifyPlaylist[]> {
-  try {
-    return (await playlistStore.getItem<SpotifyPlaylist[]>('userPlaylists')) ?? [];
-  } catch (err) {
-    console.error('[offlineDb] Playlists konnten nicht geladen werden:', err);
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Library helpers (scraper-first flow – playlists the user added by link)
-//
-// Stored on the same instance as the OAuth playlist cache but under a separate
-// key, so the two flows never collide.
+// Library helpers – the playlists the user added by link
 // ---------------------------------------------------------------------------
 
 const LIBRARY_KEY = 'libraryPlaylists';

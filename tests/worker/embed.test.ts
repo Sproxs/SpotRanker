@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { htmlResponse, stubFetch } from '../helpers/fakeFetch';
 import { fetchPlaylistEmbed } from '../../worker/providers/embed';
-import { NotFoundError, ProviderError } from '../../worker/providers/apiV1';
+import { NotFoundError, ProviderError } from '../../worker/errors';
 import {
   EMBED_HTML_BAD_JSON,
   EMBED_HTML_NO_ENTITY,
@@ -29,12 +29,13 @@ beforeEach(() => {
 });
 
 describe('fetchPlaylistEmbed', () => {
-  it('happy path: always degraded, last cover source wins, empty-id tracks filtered', async () => {
+  it('happy path: last cover source wins, empty-id tracks filtered', async () => {
     stubEmbed(EMBED_HTML_OK);
 
-    const { playlist, tracks, degraded } = await fetchPlaylistEmbed(ID);
+    const { playlist, tracks, coversMissing } = await fetchPlaylistEmbed(ID);
 
-    expect(degraded).toBe(true);
+    // The fixture carries no per-track artwork, so the client must backfill.
+    expect(coversMissing).toBe(true);
     expect(playlist).toEqual({
       id: ID,
       name: 'Fixture Playlist',

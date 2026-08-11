@@ -1,13 +1,13 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { SpotifyPlaylist, SpotifyTrack, LibraryPlaylist } from '@/types/spotify';
-import { fetchUserPlaylists, fetchPlaylistTracks } from '@/services/spotifyApi';
-import { fetchScrapedPlaylist, fetchScrapedUserPlaylists } from '@/services/scraperApi';
-import { classifyInput } from '@/utils/spotifyUrl';
-import { useAuthStore } from '@/stores/auth';
 import {
-  savePlaylists,
-  loadPlaylists,
+  fetchScrapedPlaylist,
+  fetchScrapedUserPlaylists,
+  fetchTrackCovers,
+} from '@/services/scraperApi';
+import { classifyInput } from '@/utils/spotifyUrl';
+import {
   savePlaylistTracks,
   loadPlaylistTracks,
   getCachedPlaylistIds,
@@ -16,6 +16,9 @@ import {
   addToLibrary,
   removeFromLibrary,
 } from '@/services/offlineDb';
+
+/** Cover lookups per request — must not exceed the backend's own ceiling. */
+const COVER_BATCH_SIZE = 20;
 
 /** Result of adding pasted input – tells the view what happened. */
 export type AddInputResult =
@@ -27,11 +30,9 @@ export const usePlaylistStore = defineStore('playlists', () => {
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
-  const playlists = ref<SpotifyPlaylist[]>([]); // OAuth "Meine Playlists"
-  const library = ref<LibraryPlaylist[]>([]); // scraper-first, added by link
+  const library = ref<LibraryPlaylist[]>([]); // added by link, scraped
   const cachedPlaylistIds = ref<Set<string>>(new Set());
   const currentTracks = ref<SpotifyTrack[]>([]);
-  const isLoadingPlaylists = ref(false);
   const isLoadingTracks = ref(false);
   const isAddingPlaylist = ref(false);
   const error = ref<string | null>(null);
@@ -44,14 +45,6 @@ export const usePlaylistStore = defineStore('playlists', () => {
   // ---------------------------------------------------------------------------
   // Computed
   // ---------------------------------------------------------------------------
-  const filteredPlaylists = computed(() => {
-    const q = searchQuery.value.toLowerCase().trim();
-    if (!q) return playlists.value;
-    return playlists.value.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.owner.toLowerCase().includes(q),
-    );
-  });
-
   const filteredLibrary = computed(() => {
     const q = searchQuery.value.toLowerCase().trim();
     if (!q) return library.value;
@@ -84,13 +77,8 @@ export const usePlaylistStore = defineStore('playlists', () => {
       const classified = classifyInput(input);
 
       if (classified.kind === 'playlist' && classified.id) {
-        const { playlist, tracks, degraded } = await fetchScrapedPlaylist(classified.id);
-        const entry: LibraryPlaylist = {
-          ...playlist,
-          source: 'scraped',
-          addedAt: Date.now(),
-          degraded,
-        };
+        const { playlist, tracks } = await fetchScrapedPlaylist(classified.id);
+        const entry: LibraryPlaylist = { ...playlist, addedAt: Date.now() };
         library.value = await addToLibrary(entry);
         await savePlaylistTracks(entry.id, tracks);
         cachedPlaylistIds.value = await getCachedPlaylistIds();
@@ -115,7 +103,7 @@ export const usePlaylistStore = defineStore('playlists', () => {
 
   /** One-click add for a playlist listed from a profile. */
   async function addScrapedPlaylist(playlist: SpotifyPlaylist): Promise<void> {
-    const entry: LibraryPlaylist = { ...playlist, source: 'scraped', addedAt: Date.now() };
+    const entry: LibraryPlaylist = { ...playlist, addedAt: Date.now() };
     library.value = await addToLibrary(entry);
   }
 
@@ -135,76 +123,59 @@ export const usePlaylistStore = defineStore('playlists', () => {
   }
 
   // ---------------------------------------------------------------------------
-  // OAuth "Meine Playlists" (unchanged behavior)
+  // Tracks
   // ---------------------------------------------------------------------------
 
-  /** Load the signed-in user's playlists – tries API first, falls back to cache. */
-  async function loadUserPlaylists(): Promise<void> {
-    isLoadingPlaylists.value = true;
-    error.value = null;
-
-    try {
-      const apiPlaylists = await fetchUserPlaylists();
-      playlists.value = apiPlaylists;
-      await savePlaylists(apiPlaylists);
-    } catch (e) {
-      console.warn('[PlaylistStore] API-Abruf fehlgeschlagen, lade aus Cache…', e);
-
-      const auth = useAuthStore();
-      if (!auth.isAuthenticated) {
-        error.value = e instanceof Error ? e.message : 'Playlists konnten nicht geladen werden.';
-        return;
-      }
-
-      const cached = await loadPlaylists();
-      if (cached.length > 0) {
-        playlists.value = cached;
-      } else {
-        error.value = e instanceof Error ? e.message : 'Playlists konnten nicht geladen werden.';
-      }
-    } finally {
-      isLoadingPlaylists.value = false;
-    }
-
-    cachedPlaylistIds.value = await getCachedPlaylistIds();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Tracks – source-routed (scraper vs. authenticated account)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Decide how to fetch a playlist's tracks:
-   * - `account`  → the OAuth Web API (private playlists, "Meine Playlists").
-   * - `scraped`  → the built-in scraper (default, no login).
-   * A library entry's own `source` wins; otherwise a signed-in user defaults to
-   * the account API and everyone else to the scraper.
-   */
+  /** Fetch a playlist's tracks from the scraper (the only source). */
   async function fetchTracksForPlaylist(playlistId: string): Promise<SpotifyTrack[]> {
     const entry = library.value.find((p) => p.id === playlistId);
-    const auth = useAuthStore();
+    const { tracks, playlist } = await fetchScrapedPlaylist(playlistId);
 
-    const useAccount = entry
-      ? entry.source === 'account'
-      : auth.isAuthenticated;
-
-    if (useAccount) {
-      return fetchPlaylistTracks(playlistId);
-    }
-
-    const { tracks, playlist, degraded } = await fetchScrapedPlaylist(playlistId);
-
-    // Refresh the library entry with the now-known count/degraded (profile-added
-    // entries start with trackCount 0).
+    // Refresh the library entry with the now-known count (profile-added entries
+    // start with trackCount 0).
     if (entry) {
       entry.trackCount = playlist.trackCount || tracks.length;
-      entry.degraded = degraded;
       if (!entry.name || entry.name === 'Unbenannte Playlist') entry.name = playlist.name;
       if (!entry.imageUrl) entry.imageUrl = playlist.imageUrl;
       await saveLibrary(library.value);
     }
 
     return tracks;
+  }
+
+  /**
+   * Resolve album art for tracks that have none, in small batches.
+   *
+   * The embed payload usually carries no per-track artwork, so covers come from
+   * a separate tokenless lookup. Each batch costs one request, so this runs in
+   * the background: tiles show the placeholder until their cover arrives, and
+   * the filled-in tracks are persisted so a second visit is instant.
+   */
+  async function backfillCovers(playlistId: string): Promise<void> {
+    const pending = currentTracks.value.filter((t) => !t.albumCoverUrl).map((t) => t.id);
+    if (pending.length === 0) return;
+
+    let changed = false;
+    for (let i = 0; i < pending.length; i += COVER_BATCH_SIZE) {
+      const batch = pending.slice(i, i + COVER_BATCH_SIZE);
+      let covers: Record<string, string | null>;
+      try {
+        covers = await fetchTrackCovers(batch);
+      } catch {
+        return; // offline or endpoint unavailable — placeholders stay, no error shown
+      }
+
+      for (const track of currentTracks.value) {
+        const url = covers[track.id];
+        if (url && !track.albumCoverUrl) {
+          track.albumCoverUrl = url;
+          changed = true;
+        }
+      }
+
+      // Persist as we go so a reload keeps whatever was already resolved.
+      if (changed) await savePlaylistTracks(playlistId, [...currentTracks.value]);
+    }
   }
 
   /**
@@ -251,11 +222,9 @@ export const usePlaylistStore = defineStore('playlists', () => {
 
   return {
     // state
-    playlists,
     library,
     cachedPlaylistIds,
     currentTracks,
-    isLoadingPlaylists,
     isLoadingTracks,
     isAddingPlaylist,
     error,
@@ -263,17 +232,15 @@ export const usePlaylistStore = defineStore('playlists', () => {
     searchQuery,
     profileResults,
     // computed
-    filteredPlaylists,
     filteredLibrary,
-    // library actions
+    // actions
     initLibrary,
     addPlaylistByInput,
     addScrapedPlaylist,
     removePlaylist,
     isInLibrary,
     clearProfileResults,
-    // account actions
-    loadUserPlaylists,
     loadTracks,
+    backfillCovers,
   };
 });

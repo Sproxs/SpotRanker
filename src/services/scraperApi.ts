@@ -13,18 +13,22 @@ interface ApiError {
 interface ApiPlaylistResponse {
   playlist: SpotifyPlaylist;
   tracks: SpotifyTrack[];
-  source: 'apiv1' | 'profileview' | 'embed';
-  degraded: boolean;
+  source: 'embed' | 'userpage';
+  coversMissing: boolean;
 }
 
 interface ApiUserPlaylistsResponse {
   playlists: SpotifyPlaylist[];
-  source: 'apiv1' | 'profileview' | 'embed';
+  source: 'embed' | 'userpage';
+}
+
+interface ApiTrackCoversResponse {
+  covers: Record<string, string | null>;
 }
 
 const ERROR_MESSAGES: Record<ApiError['error'], string> = {
   not_found: 'Playlist nicht gefunden. Ist sie öffentlich?',
-  private: 'Diese Playlist ist privat und kann ohne Login nicht geladen werden.',
+  private: 'Diese Playlist ist privat und kann nicht geladen werden.',
   scrape_failed: 'Playlist konnte nicht geladen werden. Bitte später erneut versuchen.',
   bad_request: 'Ungültige Eingabe.',
   method_not_allowed: 'Ungültige Anfrage.',
@@ -50,12 +54,14 @@ async function apiFetch<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-/** Fetch a public playlist (metadata + all tracks) via the scraper. */
-export async function fetchScrapedPlaylist(
-  playlistId: string,
-): Promise<{ playlist: SpotifyPlaylist; tracks: SpotifyTrack[]; degraded: boolean }> {
+/** Fetch a public playlist (metadata + tracks) via the scraper. */
+export async function fetchScrapedPlaylist(playlistId: string): Promise<{
+  playlist: SpotifyPlaylist;
+  tracks: SpotifyTrack[];
+  coversMissing: boolean;
+}> {
   const data = await apiFetch<ApiPlaylistResponse>(`/playlist/${encodeURIComponent(playlistId)}`);
-  return { playlist: data.playlist, tracks: data.tracks, degraded: data.degraded };
+  return { playlist: data.playlist, tracks: data.tracks, coversMissing: data.coversMissing };
 }
 
 /** Fetch the public playlists of a Spotify profile via the scraper. */
@@ -64,4 +70,16 @@ export async function fetchScrapedUserPlaylists(userId: string): Promise<Spotify
     `/user/${encodeURIComponent(userId)}/playlists`,
   );
   return data.playlists;
+}
+
+/**
+ * Resolve album art for a batch of track ids.
+ * The backend caps the batch size, so callers must chunk.
+ */
+export async function fetchTrackCovers(ids: string[]): Promise<Record<string, string | null>> {
+  if (ids.length === 0) return {};
+  const data = await apiFetch<ApiTrackCoversResponse>(
+    `/track-covers?ids=${encodeURIComponent(ids.join(','))}`,
+  );
+  return data.covers;
 }

@@ -4,32 +4,20 @@ import draggable from 'vuedraggable';
 import html2canvas from 'html2canvas';
 import { useRouter } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlists';
-import { useAuthStore } from '@/stores/auth';
 import type { SpotifyTrack } from '@/types/spotify';
 import type { RankingData } from '@/types/spotify';
 import { saveRanking, loadRanking } from '@/services/offlineDb';
 import SkeletonTierRow from '@/components/ui/SkeletonTierRow.vue';
+import TrackTile from '@/components/ui/TrackTile.vue';
 
 const props = defineProps<{ playlistId: string }>();
 
 const router = useRouter();
 const store = usePlaylistStore();
-const auth = useAuthStore();
 
-const playlistName = computed(() => {
-  const p =
-    store.library.find((pl) => pl.id === props.playlistId) ??
-    store.playlists.find((pl) => pl.id === props.playlistId);
-  return p?.name ?? 'Playlist';
-});
-
-// Whether this playlist is loaded via the authenticated account (OAuth) rather
-// than the scraper – only then does an "erneut einloggen" prompt make sense.
-const isAccountPlaylist = computed(() => {
-  const entry = store.library.find((pl) => pl.id === props.playlistId);
-  if (entry) return entry.source === 'account';
-  return auth.isAuthenticated;
-});
+const playlistName = computed(
+  () => store.library.find((pl) => pl.id === props.playlistId)?.name ?? 'Playlist',
+);
 
 // ---------------------------------------------------------------------------
 // Tier definitions & colors
@@ -86,7 +74,22 @@ function showStatus(msg: string, durationMs = 3000): void {
 // ---------------------------------------------------------------------------
 // Hydration helper – restore ranking from IndexedDB into tierData
 // ---------------------------------------------------------------------------
-function hydrateFromRanking(tracks: SpotifyTrack[], ranking: RankingData): void {
+/**
+ * Ranked track ids the current track list does not contain — e.g. because the
+ * scraper fell back to the embed provider, which truncates at ~100 tracks.
+ * They cannot be rendered, but they are folded back into every save so a
+ * temporarily short track list can never erase an existing ranking.
+ */
+const missingRankedIds = reactive<Record<TierKey, string[]>>({
+  S: [],
+  A: [],
+  B: [],
+  C: [],
+  D: [],
+});
+
+/** Restore a saved ranking; returns how many ranked tracks could not be resolved. */
+function hydrateFromRanking(tracks: SpotifyTrack[], ranking: RankingData): number {
   const trackMap = new Map<string, SpotifyTrack>();
   for (const t of tracks) {
     trackMap.set(t.id, t);
@@ -101,12 +104,22 @@ function hydrateFromRanking(tracks: SpotifyTrack[], ranking: RankingData): void 
       .filter((t): t is SpotifyTrack => t !== undefined);
   }
 
+  // Remember unresolvable ids per tier (unranked ones carry no information).
+  let missingCount = 0;
+  for (const key of tiers) {
+    const absent = (ranking[key] ?? []).filter((id) => !trackMap.has(id));
+    missingRankedIds[key] = absent;
+    missingCount += absent.length;
+  }
+
   // Any tracks not referenced in the saved ranking go back to unranked
   const assignedIds = new Set(allTierKeys.flatMap((k) => ranking[k] ?? []));
   const leftover = tracks.filter((t) => !assignedIds.has(t.id));
   if (leftover.length > 0) {
     tierData.unranked.push(...leftover);
   }
+
+  return missingCount;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,12 +155,19 @@ async function executeSave(ranking: RankingData): Promise<void> {
 }
 
 function buildRanking(): RankingData {
+  // Append the ids that could not be rendered this session, so an incomplete
+  // track list never silently drops a placement (see missingRankedIds).
+  const tier = (key: TierKey): string[] => [
+    ...tierData[key].map((t) => t.id),
+    ...missingRankedIds[key],
+  ];
+
   return {
-    S: tierData.S.map((t) => t.id),
-    A: tierData.A.map((t) => t.id),
-    B: tierData.B.map((t) => t.id),
-    C: tierData.C.map((t) => t.id),
-    D: tierData.D.map((t) => t.id),
+    S: tier('S'),
+    A: tier('A'),
+    B: tier('B'),
+    C: tier('C'),
+    D: tier('D'),
     unranked: tierData.unranked.map((t) => t.id),
   };
 }
@@ -187,7 +207,13 @@ watch(
       try {
         const savedRanking = await loadRanking(props.playlistId);
         if (savedRanking) {
-          hydrateFromRanking(tracks, savedRanking);
+          const missing = hydrateFromRanking(tracks, savedRanking);
+          if (missing > 0) {
+            showStatus(
+              `${missing} eingeordnete Songs fehlen in den geladenen Daten und werden gerade nicht angezeigt – die Einordnung bleibt gespeichert.`,
+              8000,
+            );
+          }
         } else {
           tierData.unranked = [...tracks];
         }
@@ -326,8 +352,12 @@ onBeforeUnmount(() => {
   }
 });
 
-onMounted(() => {
-  store.loadTracks(props.playlistId);
+onMounted(async () => {
+  await store.loadTracks(props.playlistId);
+  // Album art is resolved separately and in batches, so tiles render straight
+  // away and fill in as covers arrive. Failures stay silent — the placeholder
+  // is a valid end state.
+  void store.backfillCovers(props.playlistId);
 });
 </script>
 
@@ -399,13 +429,6 @@ onMounted(() => {
       class="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400"
     >
       <p>{{ store.error }}</p>
-      <button
-        v-if="isAccountPlaylist"
-        class="mt-3 rounded-lg border border-red-500/40 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200"
-        @click="auth.logout(); router.replace({ name: 'home' })"
-      >
-        Erneut einloggen
-      </button>
     </div>
 
     <template v-else>
@@ -440,21 +463,7 @@ onMounted(() => {
               <div
                 class="group/tile relative w-20 flex-shrink-0 cursor-grab overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 transition-transform active:cursor-grabbing active:scale-105"
               >
-                <div class="relative aspect-square w-full bg-zinc-800">
-                  <img
-                    v-if="element.albumCoverUrl"
-                    :src="element.albumCoverUrl"
-                    :alt="element.name"
-                    crossorigin="anonymous"
-                    class="pointer-events-none h-full w-full object-cover"
-                    loading="lazy"
-                  />
-                  <div v-else class="flex h-full items-center justify-center text-xl text-zinc-600">🎵</div>
-                </div>
-                <div class="p-1">
-                  <p class="truncate text-[10px] font-semibold text-white">{{ element.name }}</p>
-                  <p class="truncate text-[9px] text-zinc-400">{{ element.artist }}</p>
-                </div>
+                <TrackTile :track="element" />
               </div>
             </template>
           </draggable>
@@ -491,21 +500,7 @@ onMounted(() => {
                 class="group/tile relative w-20 flex-shrink-0 cursor-grab overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition-transform hover:border-spotify-400/50 active:cursor-grabbing active:scale-105"
                 style="content-visibility: auto; contain-intrinsic-size: 5rem 6.5rem"
               >
-                <div class="relative aspect-square w-full bg-zinc-800">
-                  <img
-                    v-if="element.albumCoverUrl"
-                    :src="element.albumCoverUrl"
-                    :alt="element.name"
-                    crossorigin="anonymous"
-                    class="pointer-events-none h-full w-full object-cover"
-                    loading="lazy"
-                  />
-                  <div v-else class="flex h-full items-center justify-center text-xl text-zinc-600">🎵</div>
-                </div>
-                <div class="p-1">
-                  <p class="truncate text-[10px] font-semibold text-white">{{ element.name }}</p>
-                  <p class="truncate text-[9px] text-zinc-400">{{ element.artist }}</p>
-                </div>
+                <TrackTile :track="element" />
               </div>
             </template>
           </draggable>

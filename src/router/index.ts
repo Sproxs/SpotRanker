@@ -9,13 +9,6 @@ const router = createRouter({
       component: () => import('@/views/HomeView.vue')
     },
     {
-      path: '/callback',
-      name: 'callback',
-      component: () => import('@/views/CallbackView.vue')
-    },
-    {
-      // Public: the dashboard works without a login via the scraper. Signed-in
-      // users additionally see their own Spotify playlists ("Meine Playlists").
       path: '/dashboard',
       name: 'dashboard',
       component: () => import('@/views/DashboardView.vue')

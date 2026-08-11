@@ -8,8 +8,8 @@ import {
 const PLAYLIST_PAYLOAD = {
   playlist: { id: 'p', name: 'P', description: '', imageUrl: null, trackCount: 0, owner: '' },
   tracks: [],
-  source: 'apiv1',
-  degraded: false,
+  source: 'embed',
+  coversMissing: false,
 };
 
 beforeEach(() => {
@@ -17,7 +17,7 @@ beforeEach(() => {
 });
 
 describe('fetchScrapedPlaylist', () => {
-  it('returns playlist/tracks/degraded and drops `source`; id is URL-encoded', async () => {
+  it('returns playlist/tracks/coversMissing and drops `source`; id is URL-encoded', async () => {
     const fetchMock = stubFetch([
       {
         match: (url) => url.includes('/api/playlist/'),
@@ -30,15 +30,16 @@ describe('fetchScrapedPlaylist', () => {
     expect(result).toEqual({
       playlist: PLAYLIST_PAYLOAD.playlist,
       tracks: [],
-      degraded: false,
+      coversMissing: false,
     });
     expect(result).not.toHaveProperty('source');
     expect(fetchMock.calls[0].url).toBe('/api/playlist/id%20with%20spaces');
   });
 
+
   it.each([
     ['not_found', 'Playlist nicht gefunden. Ist sie öffentlich?', 404],
-    ['private', 'Diese Playlist ist privat und kann ohne Login nicht geladen werden.', 404],
+    ['private', 'Diese Playlist ist privat und kann nicht geladen werden.', 404],
     ['scrape_failed', 'Playlist konnte nicht geladen werden. Bitte später erneut versuchen.', 502],
     ['bad_request', 'Ungültige Eingabe.', 400],
     ['method_not_allowed', 'Ungültige Anfrage.', 405],
