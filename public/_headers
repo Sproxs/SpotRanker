@@ -1,0 +1,18 @@
+# Cloudflare Workers static-assets header rules.
+#
+# The service worker and the HTML shell are the two files that gate every PWA
+# update: if an edge or browser cache serves a stale sw.js, the client-side
+# update check has nothing new to find. Hashed JS/CSS assets are immutable by
+# name and keep Cloudflare's default caching.
+#
+# Unrelated to the _redirects caveat in CLOUDFLARE_DEPLOYMENT.md — that one is a
+# separate mechanism and still must not exist.
+
+/sw.js
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache

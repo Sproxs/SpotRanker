@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { clearAllCaches } from '@/services/offlineDb';
+import { formatBuildInfo } from '@/config/buildInfo';
+import { usePwaUpdate, type UpdateCheckState } from '@/services/pwaUpdate';
 
 type LogLevel = 'log' | 'warn' | 'error';
 
@@ -113,6 +115,52 @@ const levelBadge: Record<LogLevel, string> = {
   error: 'bg-red-900/60 text-red-300',
 };
 
+// ---------------------------------------------------------------------------
+// PWA update check. State lives in the pwaUpdate singleton, so the label here
+// stays in sync with the update banner instead of running its own timer.
+// ---------------------------------------------------------------------------
+const { checkState, checkForUpdate, applyUpdate } = usePwaUpdate();
+
+const buildInfo = formatBuildInfo();
+
+const updateLabels: Record<UpdateCheckState, string> = {
+  idle: 'Check for Update',
+  checking: 'Checking…',
+  available: 'Update ready!',
+  'up-to-date': 'Up to date',
+  offline: 'Offline',
+  unsupported: 'Not in dev',
+  error: 'Check failed',
+};
+
+const updateLabel = computed(() => updateLabels[checkState.value]);
+
+const updateClass = computed(() => {
+  switch (checkState.value) {
+    case 'available':
+    case 'up-to-date':
+      return 'bg-green-900/60 text-green-300';
+    case 'error':
+      return 'bg-red-900/60 text-red-300';
+    case 'checking':
+    case 'offline':
+    case 'unsupported':
+      return 'text-zinc-600';
+    default:
+      return 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200';
+  }
+});
+
+function handleCheckForUpdate() {
+  if (checkState.value === 'checking') return;
+  // A second click on "Update ready!" applies it, same as the banner button.
+  if (checkState.value === 'available') {
+    void applyUpdate();
+    return;
+  }
+  void checkForUpdate();
+}
+
 async function handleClearCache() {
   try {
     await clearAllCaches();
@@ -152,6 +200,14 @@ async function handleClearCache() {
         <div class="flex items-center gap-2">
           <button
             class="rounded px-2 py-0.5 text-xs transition"
+            :class="updateClass"
+            :title="checkState === 'available' ? 'Apply the waiting update' : 'Check for a new app version'"
+            @click="handleCheckForUpdate"
+          >
+            {{ updateLabel }}
+          </button>
+          <button
+            class="rounded px-2 py-0.5 text-xs transition"
             :class="cacheCleared ? 'bg-green-900/60 text-green-300' : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200'"
             @click="handleClearCache"
           >
@@ -181,6 +237,11 @@ async function handleClearCache() {
           <span class="min-w-0 break-all" :class="levelClass[entry.level]">{{ entry.message }}</span>
           <span class="ml-auto shrink-0 text-zinc-600">{{ entry.timestamp }}</span>
         </div>
+      </div>
+
+      <!-- Build stamp: makes it verifiable that an update actually landed. -->
+      <div class="border-t border-zinc-800 px-4 py-1.5 text-[10px] text-zinc-600">
+        Version {{ buildInfo }}
       </div>
     </div>
   </Transition>
