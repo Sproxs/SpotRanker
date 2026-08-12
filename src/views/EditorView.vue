@@ -4,6 +4,7 @@ import draggable from 'vuedraggable';
 import html2canvas from 'html2canvas';
 import { useRouter } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlists';
+import { useSettingsStore } from '@/stores/settings';
 import type { SpotifyTrack } from '@/types/spotify';
 import type { RankingData } from '@/types/spotify';
 import { saveRanking, loadRanking } from '@/services/offlineDb';
@@ -14,6 +15,7 @@ const props = defineProps<{ playlistId: string }>();
 
 const router = useRouter();
 const store = usePlaylistStore();
+const settings = useSettingsStore();
 
 const playlistName = computed(
   () => store.library.find((pl) => pl.id === props.playlistId)?.name ?? 'Playlist',
@@ -241,18 +243,20 @@ const dragGroup = { name: 'tierlist', pull: true, put: true };
 const tierListRef = ref<HTMLElement | null>(null);
 const isExporting = ref(false);
 
-const canvasOptions = {
+// One source for both export and share, so the two never drift apart. The
+// resolution comes from the settings panel.
+const canvasOptions = computed(() => ({
   backgroundColor: '#09090b',
   useCORS: true,
-  scale: 2,
-} as const;
+  scale: settings.exportScale,
+}));
 
 async function exportAsImage(): Promise<void> {
   if (!tierListRef.value || isExporting.value) return;
   isExporting.value = true;
 
   try {
-    const canvas = await html2canvas(tierListRef.value, canvasOptions);
+    const canvas = await html2canvas(tierListRef.value, canvasOptions.value);
     const dataUrl = canvas.toDataURL('image/png');
     const link = document.createElement('a');
     link.download = `${playlistName.value}-tierlist.png`;
@@ -276,7 +280,7 @@ async function shareImage(): Promise<void> {
   isSharing.value = true;
 
   try {
-    const canvas = await html2canvas(tierListRef.value, canvasOptions);
+    const canvas = await html2canvas(tierListRef.value, canvasOptions.value);
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, 'image/png'),

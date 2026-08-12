@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router';
 import AppNavbar from '@/components/ui/AppNavbar.vue';
-import ConsoleOverlay from '@/components/ui/ConsoleOverlay.vue';
+import SettingsOverlay from '@/components/ui/SettingsOverlay.vue';
 import UpdateBanner from '@/components/ui/UpdateBanner.vue';
 </script>
 
@@ -15,7 +15,7 @@ import UpdateBanner from '@/components/ui/UpdateBanner.vue';
         <RouterView />
       </main>
     </div>
-    <ConsoleOverlay />
+    <SettingsOverlay />
     <UpdateBanner />
   </div>
 </template>
