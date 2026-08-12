@@ -2,6 +2,7 @@
 import { RouterView } from 'vue-router';
 import AppNavbar from '@/components/ui/AppNavbar.vue';
 import ConsoleOverlay from '@/components/ui/ConsoleOverlay.vue';
+import UpdateBanner from '@/components/ui/UpdateBanner.vue';
 </script>
 
 <template>
@@ -15,5 +16,6 @@ import ConsoleOverlay from '@/components/ui/ConsoleOverlay.vue';
       </main>
     </div>
     <ConsoleOverlay />
+    <UpdateBanner />
   </div>
 </template>
