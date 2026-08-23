@@ -151,7 +151,39 @@ export async function loadRanking(playlistId: string): Promise<RankingData | nul
 // Cache management
 // ---------------------------------------------------------------------------
 
-/** Clear all cached data (playlists, tracks and rankings). */
+/**
+ * Drop only the cached tracks. The library and every ranking survive – the
+ * tracks are re-fetched from the scraper on the next visit, so this frees
+ * space without destroying anything the user made.
+ */
+export async function clearTrackCache(): Promise<void> {
+  await trackStore.clear();
+}
+
+/**
+ * Clear all cached data (playlists, tracks and rankings).
+ *
+ * Destructive: this also wipes the user's library and every saved tier list.
+ * Only call it behind an explicit confirmation.
+ */
 export async function clearAllCaches(): Promise<void> {
   await Promise.all([playlistStore.clear(), trackStore.clear(), rankingStore.clear()]);
+}
+
+/**
+ * Rough origin storage usage, or null when the browser does not expose it
+ * (older Safari, some privacy modes). Callers should hide the display instead
+ * of showing a zero.
+ */
+export async function getStorageEstimate(): Promise<{ usage: number; quota: number } | null> {
+  try {
+    const estimate = await navigator.storage?.estimate?.();
+    if (!estimate || typeof estimate.usage !== 'number' || typeof estimate.quota !== 'number') {
+      return null;
+    }
+    return { usage: estimate.usage, quota: estimate.quota };
+  } catch (err) {
+    console.error('[offlineDb] Speicherbedarf konnte nicht ermittelt werden:', err);
+    return null;
+  }
 }
